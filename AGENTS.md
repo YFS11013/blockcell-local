@@ -1,3 +1,13 @@
+# Local Collaboration Rules
+
+These rules apply to my local workflow in this repository:
+
+- **Upstream sync policy**: pull-only (`fetch` / `pull` / `rebase`), no `push`.
+- **Change scope policy**: all modifications stay in my own local repo/branch/worktree.
+- **Upstream safety policy**: do not submit local task changes to upstream remotes.
+
+---
+
 # 开发规则
 
 ## Git 工作流
