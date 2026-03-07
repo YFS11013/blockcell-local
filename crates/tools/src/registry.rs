@@ -55,6 +55,7 @@ pub const GLOBAL_CORE_TOOL_NAMES: &[&str] = &[
 pub fn global_core_tool_names() -> &'static [&'static str] {
     GLOBAL_CORE_TOOL_NAMES
 }
+use crate::catenary::CatenaryExpertTool;
 
 #[derive(Clone)]
 pub struct ToolRegistry {
@@ -176,6 +177,8 @@ impl ToolRegistry {
         // Termux API (Android device control via Termux)
         registry.register(Arc::new(TermuxApiTool));
 
+        // Domain Specific Tools
+        registry.register(Arc::new(CatenaryExpertTool));
         registry
     }
 

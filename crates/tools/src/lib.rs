@@ -37,6 +37,7 @@ pub mod toggle_manage;
 pub mod tts;
 pub mod video_process;
 pub mod web;
+pub mod catenary;
 
 use async_trait::async_trait;
 use blockcell_core::system_event::{EventPriority, SystemEvent};
