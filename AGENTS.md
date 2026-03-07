@@ -29,7 +29,7 @@ personal → YFS11013/blockcell-local (个人仓库)
 ```bash
 # 1. 拉取上游最新代码
 git fetch origin
-git pull origin/main
+git rebase origin/main
 
 # 2. 创建/切换到本地开发分支
 git checkout -b local/dev
@@ -41,7 +41,7 @@ git add <files>
 git commit -m "描述"
 
 # 5. 推送到个人仓库（不是 origin！）
-git push personal
+git push personal HEAD:main
 ```
 
 ### 注意事项
