@@ -1,5 +1,7 @@
 # Local Collaboration Rules
 
+Test workflow execution
+
 These rules apply to my local workflow in this repository:
 
 - **Upstream sync policy**: pull-only (`fetch` / `pull` / `rebase`), no `push`.
