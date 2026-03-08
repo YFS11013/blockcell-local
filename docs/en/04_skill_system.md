@@ -155,11 +155,59 @@ Rhai is an embedded scripting language with a JavaScript/Rust-like syntax, desig
 - Error handling and graceful degradation
 - Result formatting
 
+### Context Variable Access Guidelines
+
+**New scripts should use `ctx.*` to access context variables** (recommended approach):
+
+```javascript
+// Recommended: use ctx object to access context
+let user_input = ctx.user_input;           // User input
+let symbol = ctx.symbol ?? "600519";       // Custom context variables
+let threshold = ctx.threshold ?? 3.0;
+```
+
+**Compatibility note**: For backward compatibility, the following legacy approaches still work (but are not recommended for new scripts):
+
+```javascript
+// Legacy approach 1: use context object (historical scripts)
+let user_input = context["user_input"];
+let symbol = context["symbol"];
+
+// Legacy approach 2: direct top-level variable access (historical scripts)
+let input = user_input;
+let sym = symbol;
+```
+
+All three access patterns work in the current version, but `ctx.*` is the canonical approach with better maintainability and consistency.
+
+### Migration Guide
+
+**Current phase**: The system supports all three access patterns (`ctx.*`, `context[...]`, top-level variables) simultaneously, ensuring historical scripts work without modification.
+
+**Recommended practice**:
+- New scripts should consistently use `ctx.*` to access context variables
+- Historical scripts can continue using their original approach; the system maintains compatibility
+- When convenient, gradually migrate historical scripts to the `ctx.*` pattern
+
+**Migration example**:
+
+```javascript
+// Old approach (still works)
+let input = user_input;
+let symbol = context["symbol"];
+
+// New approach (recommended)
+let input = ctx.user_input;
+let symbol = ctx.symbol;
+```
+
+### Complete Example
+
 ```javascript
 // Example SKILL.rhai: stock monitoring
 
-// Get the stock symbol from user context
-let symbol = ctx["symbol"];
+// Get the stock symbol from user context (using ctx object)
+let symbol = ctx.symbol;
 if symbol == "" {
     set_output("Please provide a stock symbol, e.g. 600519 (Moutai)");
     return;
@@ -272,8 +320,9 @@ Monitor a specified stock and send a notification when it drops beyond a thresho
 
 Create `SKILL.rhai`:
 ```javascript
-let symbol = ctx["symbol"] ?? "600519";
-let threshold = ctx["threshold"] ?? 3.0;
+// Use ctx object to access context variables (recommended approach)
+let symbol = ctx.symbol ?? "600519";
+let threshold = ctx.threshold ?? 3.0;
 
 let quote = call_tool("finance_api", #{
     "action": "stock_quote",
