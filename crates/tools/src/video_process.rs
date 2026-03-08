@@ -865,13 +865,21 @@ mod tests {
             event_emitter: None,
             channel_contacts_file: None,
         };
+        // Test absolute path resolution
+        let result_abs = resolve_path(&ctx, "/absolute/path.mp4");
         assert_eq!(
-            resolve_path(&ctx, "/absolute/path.mp4"),
-            "/absolute/path.mp4"
+            std::path::PathBuf::from(result_abs),
+            std::path::PathBuf::from("/absolute/path.mp4"),
+            "Absolute path should remain unchanged"
         );
+
+        // Test relative path resolution
+        let result_rel = resolve_path(&ctx, "relative.mp4");
         assert_eq!(
-            resolve_path(&ctx, "relative.mp4"),
-            "/tmp/workspace/relative.mp4"
+            std::path::PathBuf::from(result_rel),
+            ctx.workspace.join("relative.mp4"),
+            "Relative path should be joined with workspace"
         );
     }
 }
+
