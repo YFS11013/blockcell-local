@@ -1117,7 +1117,7 @@ mod tests {
     #[test]
     fn test_try_parse_value() {
         assert_eq!(try_parse_value("42"), json!(42));
-        assert_eq!(try_parse_value("3.14"), json!(3.14));
+        assert_eq!(try_parse_value("3.15"), json!(3.15));
         assert_eq!(try_parse_value("true"), json!(true));
         assert_eq!(try_parse_value("hello"), json!("hello"));
         assert_eq!(try_parse_value(""), Value::Null);
