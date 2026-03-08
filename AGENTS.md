@@ -4,9 +4,9 @@ Test workflow execution
 
 These rules apply to my local workflow in this repository:
 
-- **Upstream sync policy**: pull-only (`fetch` / `pull` / `rebase`), no `push`.
+- **Upstream sync policy**: sync from `origin/main` by `fetch`/`pull`/`rebase` only, no `push`.
 - **Change scope policy**: all modifications stay in my own local repo/branch/worktree.
-- **Upstream safety policy**: do not submit local task changes to upstream remotes.
+- **Upstream safety policy**: do not push to `origin`, do not open PR to upstream, do not merge into `origin/main`.
 
 ---
 
@@ -22,17 +22,20 @@ personal → YFS11013/blockcell-local (个人仓库)
 
 ### 分支策略
 - 本地开发使用 `local/` 前缀分支
-- 上游同步：只从 `origin/main` 拉取（fetch/pull），不推送到 origin
-- 个人仓库：推送到 `personal` remote
+- 上游同步：只从 `origin/main` 拉取（fetch/pull/rebase），`origin` 仅用于同步上游
+- 上游安全：不向 `origin` 推送，不向上游提 PR，不合并到 `origin/main`
+- 个人仓库：仅推送到 `personal` remote（自用发布）
 
 ### 操作步骤
 ```bash
-# 1. 拉取上游最新代码
+# 1. 创建/切换到本地开发分支
+git checkout -b local/dev
+# 或已存在时：
+git checkout local/dev
+
+# 2. 同步上游最新代码（只同步，不推送）
 git fetch origin
 git rebase origin/main
-
-# 2. 创建/切换到本地开发分支
-git checkout -b local/dev
 
 # 3. 开发修改...
 
@@ -40,8 +43,8 @@ git checkout -b local/dev
 git add <files>
 git commit -m "描述"
 
-# 5. 推送到个人仓库（不是 origin！）
-git push personal HEAD:main
+# 5. 推送到个人仓库（rebase 后推荐）
+git push --force-with-lease personal HEAD:main
 ```
 
 ### 注意事项
