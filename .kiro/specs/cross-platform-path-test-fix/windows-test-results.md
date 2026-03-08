@@ -1,58 +1,53 @@
-# Windows 平台测试结果
+# Windows 平台测试结果（最新复核）
 
 ## 测试环境
+
 - 操作系统: Windows
 - 平台: win32
-- Shell: cmd
 - 测试日期: 2026-03-08
 
-## Debug 模式测试
+## 可执行验证（通过）
 
-### 命令
+### Debug（lib）模式
+
+命令：
 ```bash
-cargo test -p blockcell-tools
+cargo test -p blockcell-tools --lib
 ```
 
-### 结果
-```
-Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
-Running unittests src\lib.rs (target\debug\deps\blockcell_tools-f74051e909cad52e.exe)
+结果：
+- ✅ 234/234 通过
+- ✅ `ocr::tests::test_resolve_path` 通过
+- ✅ `video_process::tests::test_resolve_path` 通过
 
-running 370 tests
-test result: ok. 370 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
-```
+## 受策略限制项（未通过）
 
-**状态**: ✅ 全部通过
+### Debug（integration）模式
 
-### 关键测试验证
-- `ocr::tests::test_resolve_path` - ✅ 通过
-- `video_process::tests::test_resolve_path` - ✅ 通过
-
-## Release 模式测试
-
-### 命令
+命令：
 ```bash
-cargo test -p blockcell-tools --release
+cargo test -p blockcell-tools --test mcp_manager -- --list
 ```
 
-### 结果
+结果：
+- ❌ 进程启动前被 WDAC 拦截
+- 错误：`os error 4551`（应用程序控制策略已阻止此文件）
+- 被拦截文件：`target\debug\deps\mcp_manager-*.exe`
+
+### Release（lib）模式
+
+命令：
+```bash
+cargo test -p blockcell-tools --lib --release
 ```
-Finished `release` profile [optimized] target(s) in 0.53s
-Running unittests src\lib.rs (target\release\deps\blockcell_tools-9e5fad88d41ce583.exe)
 
-running 370 tests
-test result: ok. 370 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
-```
-
-**状态**: ✅ 全部通过
-
-### 关键测试验证
-- `ocr::tests::test_resolve_path` - ✅ 通过
-- `video_process::tests::test_resolve_path` - ✅ 通过
+结果：
+- ❌ 进程启动前被 WDAC 拦截
+- 错误：`os error 4551`
+- 被拦截文件：`target\release\deps\blockcell_tools-*.exe`
 
 ## 总结
 
-✅ Windows 平台验证完成
-- Debug 模式: 370 个测试全部通过
-- Release 模式: 370 个测试全部通过
-- 路径测试修复成功，使用 `PathBuf` 语义比较避免了平台特定的路径分隔符问题
+- ✅ Windows 下 `--lib` 回归可执行且通过（234/234）
+- ⚠️ Windows 下 integration/release 测试受 WDAC 策略拦截，属于环境限制而非代码回归
+- ✅ 完整包级验收已在 WSL2 通过（见 `unix-linux-test-results.md`）
