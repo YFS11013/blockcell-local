@@ -467,7 +467,21 @@ mod tests {
     #[test]
     fn test_resolve_path() {
         let ws = std::path::Path::new("/workspace");
-        assert_eq!(resolve_path("/abs/path.png", ws), "/abs/path.png");
-        assert_eq!(resolve_path("rel/path.png", ws), "/workspace/rel/path.png");
+        
+        // Test absolute path resolution
+        let result_abs = resolve_path("/abs/path.png", ws);
+        assert_eq!(
+            std::path::PathBuf::from(result_abs),
+            std::path::PathBuf::from("/abs/path.png"),
+            "Absolute path should remain unchanged"
+        );
+        
+        // Test relative path resolution
+        let result_rel = resolve_path("rel/path.png", ws);
+        assert_eq!(
+            std::path::PathBuf::from(result_rel),
+            ws.join("rel/path.png"),
+            "Relative path should be joined with workspace"
+        );
     }
 }
