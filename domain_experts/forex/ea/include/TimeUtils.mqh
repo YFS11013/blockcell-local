@@ -23,9 +23,6 @@
 //+------------------------------------------------------------------+
 datetime ConvertToUTC(datetime server_time)
 {
-    // 使用外部输入参数 ServerUTCOffset
-    extern int ServerUTCOffset;
-    
     // 转换为 UTC
     datetime utc_time = server_time - ServerUTCOffset * 3600;
     
