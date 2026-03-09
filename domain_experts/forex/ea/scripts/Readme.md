@@ -1,0 +1,1 @@
+pwsh -NoProfile -File "domain_experts/forex/ea/scripts/copy_to_mt4.ps1" 
