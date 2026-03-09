@@ -1,0 +1,11 @@
+# 此目录用于存放 EA 模块头文件（.mqh）
+# 
+# 模块列表：
+# - ParameterLoader.mqh - 参数加载器
+# - TimeUtils.mqh - 时间处理工具
+# - StrategyEngine.mqh - 策略引擎
+# - RiskManager.mqh - 风险管理器
+# - OrderExecutor.mqh - 订单执行器
+# - PositionManager.mqh - 持仓管理器
+# - Logger.mqh - 日志记录器
+# - TimeFilter.mqh - 时间过滤器
