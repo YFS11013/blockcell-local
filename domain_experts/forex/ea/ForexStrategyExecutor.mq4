@@ -20,7 +20,7 @@
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
-input string ParamFilePath = "C:\\Users\\Trader\\workspace\\ea\\signal_pack.json";  // 参数包文件路径
+input string ParamFilePath = "";  // 参数包文件路径（空则使用默认路径）
 input bool DryRun = false;                    // Dry Run 模式（不下真实订单）
 input string LogLevel = "INFO";               // 日志级别：DEBUG, INFO, WARN, ERROR
 input int ParamCheckInterval = 300;           // 参数检查间隔（秒）
@@ -65,13 +65,21 @@ int OnInit()
         return INIT_PARAMETERS_INCORRECT;
     }
     
+    // 确定参数文件路径
+    string param_file_path = ParamFilePath;
+    if(StringLen(param_file_path) == 0) {
+        // 使用默认路径
+        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
+        Print("使用默认参数路径: ", param_file_path);
+    }
+    
     // 初始化日志系统
     InitLogger();
     LogInfo("EA 初始化开始");
     
     // 记录配置信息
     LogInfo("配置信息:");
-    LogInfo("  - 参数文件路径: " + ParamFilePath);
+    LogInfo("  - 参数文件路径: " + param_file_path);
     LogInfo("  - Dry Run 模式: " + (DryRun ? "启用" : "禁用"));
     LogInfo("  - 日志级别: " + LogLevel);
     LogInfo("  - 参数检查间隔: " + IntegerToString(ParamCheckInterval) + " 秒");
@@ -83,7 +91,7 @@ int OnInit()
     
     // 加载参数包
     g_CurrentState = STATE_LOADING_PARAMS;
-    if(!LoadParameterPack(ParamFilePath)) {
+    if(!LoadParameterPack(param_file_path)) {
         LogError("参数包加载失败，进入 Safe Mode");
         g_CurrentState = STATE_SAFE_MODE;
     } else {
@@ -255,15 +263,20 @@ void LogInfo(string msg) { if(LogLevel == "DEBUG" || LogLevel == "INFO") Print("
 void LogWarn(string msg) { Print("[WARN] " + msg); }
 void LogError(string msg) { Print("[ERROR] " + msg); }
 
-// 参数加载
-bool LoadParameterPack(string filePath) { 
-    LogInfo("LoadParameterPack: 占位实现，返回 false");
-    return false;  // TODO: 实现参数加载
-}
-
+// 参数更新检查
 void CheckParameterUpdate() { 
-    LogDebug("CheckParameterUpdate: 占位实现");
-    /* TODO: 实现参数更新检查 */ 
+    LogDebug("CheckParameterUpdate: 定期检查参数更新");
+    
+    // 确定参数文件路径
+    string param_file_path = ParamFilePath;
+    if(StringLen(param_file_path) == 0) {
+        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
+    }
+    
+    // 重新加载参数包
+    if(LoadParameterPack(param_file_path)) {
+        LogInfo("参数包已更新");
+    }
 }
 
 // 信号评估
