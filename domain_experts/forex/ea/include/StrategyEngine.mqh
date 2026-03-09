@@ -48,6 +48,12 @@ struct SignalResult {
 //+------------------------------------------------------------------+
 bool CheckTrendFilter(int ema_trend_period)
 {
+    // 检查 K 线数量
+    if(Bars < 2) {
+        Print("趋势过滤: K 线数量不足 (Bars=", Bars, ")");
+        return false;
+    }
+    
     // 使用已收盘的 K 线 [1]
     double close_price = Close[1];
     double ema_trend = iMA(Symbol(), PERIOD_H4, ema_trend_period, 0, MODE_EMA, PRICE_CLOSE, 1);
@@ -72,6 +78,12 @@ bool CheckTrendFilter(int ema_trend_period)
 //+------------------------------------------------------------------+
 bool CheckPriceZone(double zone_min, double zone_max)
 {
+    // 检查 K 线数量
+    if(Bars < 2) {
+        Print("区间过滤: K 线数量不足 (Bars=", Bars, ")");
+        return false;
+    }
+    
     // 使用已收盘的 K 线 [1]
     double close_price = Close[1];
     
@@ -95,6 +107,12 @@ bool CheckPriceZone(double zone_min, double zone_max)
 //+------------------------------------------------------------------+
 bool CheckEMARetracement(int ema_fast_period, int lookback, double tolerance)
 {
+    // 检查 K 线数量（需要至少 lookback + 1 根）
+    if(Bars < lookback + 1) {
+        Print("回踩检测: K 线数量不足 (Bars=", Bars, ", 需要=", lookback + 1, ")");
+        return false;
+    }
+    
     // 检查最近 lookback_period 根已收盘的 K 线（从 [1] 开始）
     for(int i = 1; i <= lookback; i++) {
         double low_price = Low[i];
@@ -123,6 +141,12 @@ bool CheckEMARetracement(int ema_fast_period, int lookback, double tolerance)
 //+------------------------------------------------------------------+
 PatternType CheckPattern(string &patterns[], int pattern_count)
 {
+    // 检查 K 线数量
+    if(Bars < 3) {
+        Print("形态识别: K 线数量不足 (Bars=", Bars, ")");
+        return PATTERN_NONE;
+    }
+    
     // 检查看跌吞没形态
     bool check_engulfing = false;
     bool check_pinbar = false;

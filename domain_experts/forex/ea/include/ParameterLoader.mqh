@@ -325,15 +325,97 @@ bool ParseParameterJSON(string json, ParameterPack &params)
     // 解析可选字段
     params.comment = ExtractJSONString(json, "comment");
     
-    // TODO: 解析数组字段（tp_levels, tp_ratios, pattern, news_blackout, session_filter）
-    // 这些字段需要更复杂的解析逻辑，暂时使用占位实现
-    params.tp_count = 0;
-    params.pattern_count = 0;
+    // 解析数组字段
+    ParseTPLevelsAndRatios(json, params);
+    ParsePatterns(json, params);
+    // TODO: 解析 news_blackout 和 session_filter（较复杂，暂时简化）
     params.blackout_count = 0;
     params.session_filter.enabled = false;
     
     Print("ParseParameterJSON: JSON 解析完成");
     return true;
+}
+
+//+------------------------------------------------------------------+
+//| 解析止盈数组（tp_levels 和 tp_ratios）                            |
+//+------------------------------------------------------------------+
+void ParseTPLevelsAndRatios(string json, ParameterPack &params)
+{
+    // 查找 tp_levels 数组
+    int tp_levels_pos = StringFind(json, "\"tp_levels\"");
+    if(tp_levels_pos >= 0) {
+        int bracket_start = StringFind(json, "[", tp_levels_pos);
+        int bracket_end = StringFind(json, "]", bracket_start);
+        if(bracket_start >= 0 && bracket_end > bracket_start) {
+            string tp_levels_str = StringSubstr(json, bracket_start + 1, bracket_end - bracket_start - 1);
+            
+            // 分割数组元素
+            string tp_parts[];
+            int tp_count = StringSplit(tp_levels_str, ',', tp_parts);
+            
+            params.tp_count = MathMin(tp_count, 10);  // 最多 10 个
+            for(int i = 0; i < params.tp_count; i++) {
+                params.tp_levels[i] = StringToDouble(tp_parts[i]);
+            }
+            
+            Print("解析 tp_levels: 数量=", params.tp_count);
+        }
+    }
+    
+    // 查找 tp_ratios 数组
+    int tp_ratios_pos = StringFind(json, "\"tp_ratios\"");
+    if(tp_ratios_pos >= 0) {
+        int bracket_start = StringFind(json, "[", tp_ratios_pos);
+        int bracket_end = StringFind(json, "]", bracket_start);
+        if(bracket_start >= 0 && bracket_end > bracket_start) {
+            string tp_ratios_str = StringSubstr(json, bracket_start + 1, bracket_end - bracket_start - 1);
+            
+            // 分割数组元素
+            string ratio_parts[];
+            int ratio_count = StringSplit(tp_ratios_str, ',', ratio_parts);
+            
+            int count = MathMin(ratio_count, params.tp_count);  // 与 tp_levels 数量一致
+            for(int i = 0; i < count; i++) {
+                params.tp_ratios[i] = StringToDouble(ratio_parts[i]);
+            }
+            
+            Print("解析 tp_ratios: 数量=", count);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 解析形态数组（pattern）                                           |
+//+------------------------------------------------------------------+
+void ParsePatterns(string json, ParameterPack &params)
+{
+    // 查找 pattern 数组
+    int pattern_pos = StringFind(json, "\"pattern\"");
+    if(pattern_pos >= 0) {
+        int bracket_start = StringFind(json, "[", pattern_pos);
+        int bracket_end = StringFind(json, "]", bracket_start);
+        if(bracket_start >= 0 && bracket_end > bracket_start) {
+            string pattern_str = StringSubstr(json, bracket_start + 1, bracket_end - bracket_start - 1);
+            
+            // 移除引号和空格
+            StringReplace(pattern_str, "\"", "");
+            StringReplace(pattern_str, " ", "");
+            
+            // 分割数组元素
+            string pattern_parts[];
+            int pattern_count = StringSplit(pattern_str, ',', pattern_parts);
+            
+            params.pattern_count = MathMin(pattern_count, 10);  // 最多 10 个
+            for(int i = 0; i < params.pattern_count; i++) {
+                params.patterns[i] = pattern_parts[i];
+            }
+            
+            Print("解析 pattern: 数量=", params.pattern_count);
+            for(int i = 0; i < params.pattern_count; i++) {
+                Print("  pattern[", i, "]=", params.patterns[i]);
+            }
+        }
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -445,8 +527,29 @@ bool ValidateParameters(ParameterPack &params)
         return false;
     }
     
-    // TODO: 校验 tp_levels 和 tp_ratios 长度相同
-    // TODO: 校验 tp_ratios 总和为 1.0
+    // 校验 tp_levels 和 tp_ratios
+    if(params.tp_count <= 0) {
+        params.error_message = "tp_levels 数组为空";
+        return false;
+    }
+    
+    // 计算 tp_ratios 总和
+    double ratio_sum = 0;
+    for(int i = 0; i < params.tp_count; i++) {
+        ratio_sum += params.tp_ratios[i];
+    }
+    
+    // 校验总和是否为 1.0（允许浮点精度误差）
+    if(MathAbs(ratio_sum - 1.0) > 1e-6) {
+        params.error_message = "tp_ratios 总和必须为 1.0，当前值: " + DoubleToString(ratio_sum, 6);
+        return false;
+    }
+    
+    // 校验 pattern 数组
+    if(params.pattern_count <= 0) {
+        params.error_message = "pattern 数组为空";
+        return false;
+    }
     
     Print("ValidateParameters: 参数校验通过");
     return true;
