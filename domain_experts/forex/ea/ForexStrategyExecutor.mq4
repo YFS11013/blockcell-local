@@ -15,6 +15,7 @@
 //+------------------------------------------------------------------+
 #include "include/TimeUtils.mqh"
 #include "include/ParameterLoader.mqh"
+#include "include/StrategyEngine.mqh"
 
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
@@ -267,8 +268,20 @@ void CheckParameterUpdate() {
 
 // 信号评估
 void EvaluateEntrySignal() { 
-    LogDebug("EvaluateEntrySignal: 占位实现");
-    /* TODO: 实现信号评估 */ 
+    // 获取当前参数
+    ParameterPack params = GetCurrentParameters();
+    
+    // 评估信号
+    SignalResult signal = EvaluateEntrySignal(params);
+    
+    // 如果信号有效，标记为待执行
+    if(signal.is_valid) {
+        g_PendingSignal = true;
+        g_SignalTime = signal.signal_time;
+        LogInfo("检测到有效信号，等待下一根 K 线开盘执行");
+    } else {
+        LogInfo("信号评估: 拒绝 - " + signal.reject_reason);
+    }
 }
 
 void ExecutePendingSignal() { 
