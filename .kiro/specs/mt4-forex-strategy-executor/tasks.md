@@ -16,34 +16,34 @@
   - 定义输入参数（ParamFilePath, DryRun, LogLevel, ParamCheckInterval, ServerUTCOffset）
   - _需求：1.1, 10.1, 10.2_
 
-- [ ] 2. 时间处理模块
-  - [ ] 2.1 实现 UTC 时间转换函数
+- [x] 2. 时间处理模块
+  - [x] 2.1 实现 UTC 时间转换函数
     - 实现 ConvertToUTC(datetime server_time) 函数
     - 使用 ServerUTCOffset 输入参数
     - _需求：1.12, 4.6, 8.5_
     - _设计：时间处理最佳实践_
 
-  - [ ] 2.2 实现 ISO 8601 时间解析函数
+  - [x] 2.2 实现 ISO 8601 时间解析函数
     - 实现 ParseISO8601(string iso_str) 函数
     - 手工解析 YYYY-MM-DDTHH:MM:SSZ 格式
     - 使用 MqlDateTime 和 StructToTime
     - _需求：1.12_
     - _设计：时间处理最佳实践_
 
-- [ ] 3. 参数加载器模块
-  - [ ] 3.1 定义参数包数据结构
+- [x] 3. 参数加载器模块
+  - [x] 3.1 定义参数包数据结构
     - 定义 ParameterPack、NewsBlackout、SessionFilter 结构体
     - _需求：1.10_
     - _设计：Parameter Loader 数据结构_
 
-  - [ ] 3.2 实现 JSON 参数文件读取
+  - [x] 3.2 实现 JSON 参数文件读取
     - 实现 LoadParameterPack(string filePath) 函数
     - 读取 signal_pack.json 文件
     - 解析 JSON 到 ParameterPack 结构体
     - _需求：1.1, 1.2_
     - _设计：Parameter Loader 接口_
 
-  - [ ] 3.3 实现参数字段校验
+  - [x] 3.3 实现参数字段校验
     - 校验所有必需字段存在
     - 校验 symbol == "EURUSD"
     - 校验 timeframe == "H4"
@@ -54,55 +54,55 @@
     - _需求：1.3, 1.7, 1.8, 1.9, 1.10, 1.11_
     - _设计：Parameter Loader 校验规则_
 
-  - [ ] 3.4 实现参数选择优先级逻辑
+  - [x] 3.4 实现参数选择优先级逻辑
     - 实现参数备份保存和加载
     - 实现参数有效期判断
     - 实现多参数优先级选择（按 version 排序）
     - _需求：1.4, 1.5, 1.6, 8.4_
     - _设计：Parameter Loader 参数选择优先级逻辑_
 
-  - [ ] 3.5 实现 Safe_Mode 状态管理
+  - [x] 3.5 实现 Safe_Mode 状态管理
     - 参数无效时进入 Safe_Mode
     - Safe_Mode 下禁止开新仓但继续管理持仓
     - _需求：1.5, 3.9_
     - _设计：EA 状态机_
 
-- [ ] 4. 策略引擎模块
-  - [ ] 4.1 实现趋势过滤
+- [x] 4. 策略引擎模块
+  - [x] 4.1 实现趋势过滤
     - 实现 CheckTrendFilter(int ema_trend_period) 函数
     - 使用已收盘的 K 线 [1]
     - 判断 Close[1] < EMA200
     - _需求：2.1_
     - _设计：Strategy Engine 策略逻辑 1_
 
-  - [ ] 4.2 实现区间过滤
+  - [x] 4.2 实现区间过滤
     - 实现 CheckPriceZone(double zone_min, double zone_max) 函数
     - 使用已收盘的 K 线 [1]
     - 判断价格在 entry_zone 范围内
     - _需求：2.2, 2.3_
     - _设计：Strategy Engine 策略逻辑 2_
 
-  - [ ] 4.3 实现 EMA 回踩检测
+  - [x] 4.3 实现 EMA 回踩检测
     - 实现 CheckEMARetracement(int ema_fast_period, int lookback, double tolerance) 函数
     - 检查最近 lookback_period 根已收盘的 K 线（从 [1] 开始）
     - 判断是否存在回踩 EMA50
     - _需求：2.4_
     - _设计：Strategy Engine 策略逻辑 3_
 
-  - [ ] 4.4 实现形态识别
+  - [x] 4.4 实现形态识别
     - 实现 CheckPattern(string patterns[]) 函数
     - 实现看跌吞没形态识别（使用 [1] 和 [2]）
     - 实现看跌 Pin Bar 形态识别（使用 [1]）
     - _需求：2.5, 2.6_
     - _设计：Strategy Engine 策略逻辑 4, 5_
 
-  - [ ] 4.5 实现止损计算
+  - [x] 4.5 实现止损计算
     - 实现 CalculateStopLoss(double invalid_above, double signal_high, double buffer) 函数
     - 计算 max(invalid_above, Signal_K 高点 + buffer)
     - _需求：2.8_
     - _设计：Strategy Engine 策略逻辑 6_
 
-  - [ ] 4.6 实现信号评估主函数
+  - [x] 4.6 实现信号评估主函数
     - 实现 EvaluateEntrySignal(ParameterPack params) 函数
     - 整合所有入场条件判断
     - 返回 SignalResult 结构体
