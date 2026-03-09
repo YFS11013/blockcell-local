@@ -170,9 +170,16 @@ void OnTick()
             
             // 如果有待执行的信号，在新 K 线开盘时执行
             if(g_PendingSignal && isNewBar) {
-                LogInfo("检测到新 K 线，执行待开仓信号");
-                ExecutePendingSignal();
-                g_PendingSignal = false;
+                // 执行前再次检查参数有效期
+                if(!IsParameterValid()) {
+                    LogWarn("待执行信号时参数已过期，取消执行并切换到 Safe Mode");
+                    g_PendingSignal = false;
+                    g_CurrentState = STATE_SAFE_MODE;
+                } else {
+                    LogInfo("检测到新 K 线，执行待开仓信号");
+                    ExecutePendingSignal();
+                    g_PendingSignal = false;
+                }
             }
             
             // 在 K 线收盘时评估入场信号
