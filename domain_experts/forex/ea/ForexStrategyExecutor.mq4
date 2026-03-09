@@ -89,6 +89,19 @@ int OnInit()
     g_LastBarTime = Time[0];
     LogInfo("初始 K 线时间: " + TimeToString(g_LastBarTime));
     
+    // V1 固定品种和周期校验
+    if(Symbol() != "EURUSD") {
+        LogError("当前图表品种为 " + Symbol() + "，V1 仅支持 EURUSD");
+        return INIT_FAILED;
+    }
+    
+    if(Period() != PERIOD_H4) {
+        LogError("当前图表周期为 " + IntegerToString(Period()) + " 分钟，V1 仅支持 H4 (240 分钟)");
+        return INIT_FAILED;
+    }
+    
+    LogInfo("品种和周期校验通过: EURUSD H4");
+    
     // 加载参数包
     g_CurrentState = STATE_LOADING_PARAMS;
     if(!LoadParameterPack(param_file_path)) {
@@ -281,6 +294,13 @@ void CheckParameterUpdate() {
 
 // 信号评估
 void EvaluateEntrySignal() { 
+    // 检查参数有效期
+    if(!IsParameterValid()) {
+        LogWarn("参数无效或已过期，切换到 Safe Mode");
+        g_CurrentState = STATE_SAFE_MODE;
+        return;
+    }
+    
     // 获取当前参数
     ParameterPack params = GetCurrentParameters();
     

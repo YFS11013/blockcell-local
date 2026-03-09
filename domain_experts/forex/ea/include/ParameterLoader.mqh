@@ -330,7 +330,10 @@ bool ParseParameterJSON(string json, ParameterPack &params)
     params.comment = ExtractJSONString(json, "comment");
     
     // 解析数组字段
-    ParseTPLevelsAndRatios(json, params);
+    if(!ParseTPLevelsAndRatios(json, params)) {
+        Print("ERROR: tp_levels/tp_ratios 解析失败");
+        return false;
+    }
     ParsePatterns(json, params);
     // TODO: 解析 news_blackout 和 session_filter（较复杂，暂时简化）
     params.blackout_count = 0;
@@ -342,8 +345,9 @@ bool ParseParameterJSON(string json, ParameterPack &params)
 
 //+------------------------------------------------------------------+
 //| 解析止盈数组（tp_levels 和 tp_ratios）                            |
+//| 返回：true - 解析成功，false - 长度不一致                         |
 //+------------------------------------------------------------------+
-void ParseTPLevelsAndRatios(string json, ParameterPack &params)
+bool ParseTPLevelsAndRatios(string json, ParameterPack &params)
 {
     int tp_count = 0;
     int ratio_count = 0;
@@ -365,7 +369,7 @@ void ParseTPLevelsAndRatios(string json, ParameterPack &params)
                 params.tp_levels[i] = StringToDouble(tp_parts[i]);
             }
             
-            Print("解析 tp_levels: 数量=", params.tp_count);
+            Print("解析 tp_levels: 数量=", tp_count);
         }
     }
     
@@ -381,26 +385,36 @@ void ParseTPLevelsAndRatios(string json, ParameterPack &params)
             string ratio_parts[];
             ratio_count = StringSplit(tp_ratios_str, ',', ratio_parts);
             
-            // 检查长度一致性
+            // 检查长度一致性（硬失败）
             if(ratio_count != tp_count) {
-                Print("WARN: tp_ratios 长度(", ratio_count, ") 与 tp_levels 长度(", tp_count, ") 不一致");
-                // 使用较小的长度，避免数组越界
-                int min_count = MathMin(ratio_count, tp_count);
-                params.tp_count = MathMin(min_count, 10);
+                Print("ERROR: tp_ratios 长度(", ratio_count, ") 与 tp_levels 长度(", tp_count, ") 不一致");
+                params.error_message = "tp_levels 和 tp_ratios 长度不一致，tp_levels=" + IntegerToString(tp_count) + ", tp_ratios=" + IntegerToString(ratio_count);
+                return false;
             }
             
+            // 长度一致，解析数据
             for(int i = 0; i < params.tp_count; i++) {
                 params.tp_ratios[i] = StringToDouble(ratio_parts[i]);
             }
             
-            Print("解析 tp_ratios: 数量=", params.tp_count);
+            Print("解析 tp_ratios: 数量=", ratio_count);
         }
     }
     
-    // 最终长度一致性检查
-    if(tp_count > 0 && ratio_count > 0 && tp_count != ratio_count) {
-        Print("ERROR: tp_levels 和 tp_ratios 长度不一致，tp_levels=", tp_count, ", tp_ratios=", ratio_count);
+    // 最终检查：两个数组都必须存在且长度一致
+    if(tp_count == 0 || ratio_count == 0) {
+        Print("ERROR: tp_levels 或 tp_ratios 数组为空");
+        params.error_message = "tp_levels 或 tp_ratios 数组为空";
+        return false;
     }
+    
+    if(tp_count != ratio_count) {
+        Print("ERROR: tp_levels 和 tp_ratios 长度不一致");
+        params.error_message = "tp_levels 和 tp_ratios 长度不一致";
+        return false;
+    }
+    
+    return true;
 }
 
 //+------------------------------------------------------------------+
@@ -503,6 +517,11 @@ bool ValidateParameters(ParameterPack &params)
         return false;
     }
     
+    if(params.invalid_above <= 0) {
+        params.error_message = "invalid_above 必须大于 0";
+        return false;
+    }
+    
     // 校验技术指标参数
     if(params.ema_fast <= 0) {
         params.error_message = "ema_fast 必须大于 0";
@@ -516,6 +535,11 @@ bool ValidateParameters(ParameterPack &params)
     
     if(params.lookback_period <= 0) {
         params.error_message = "lookback_period 必须大于 0";
+        return false;
+    }
+    
+    if(params.touch_tolerance <= 0) {
+        params.error_message = "touch_tolerance 必须大于 0";
         return false;
     }
     
