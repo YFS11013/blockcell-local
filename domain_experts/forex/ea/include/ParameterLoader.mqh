@@ -210,19 +210,21 @@ bool ExtractJSONBool(string json, string key)
 //|   filePath - 参数包文件路径                                      |
 //| 返回：                                                            |
 //|   true - 加载成功，false - 加载失败                              |
+//| 说明：                                                            |
+//|   加载失败时不会修改 g_CurrentParams，保持当前参数不变            |
 //+------------------------------------------------------------------+
 bool LoadParameterPack(string filePath)
 {
     Print("LoadParameterPack: 开始加载参数包 - ", filePath);
     
-    // 初始化参数包
-    InitParameterPack(g_CurrentParams);
+    // 使用临时参数包，避免加载失败时清空当前参数
+    ParameterPack temp_params;
+    InitParameterPack(temp_params);
     
     // 打开文件
     int file_handle = FileOpen(filePath, FILE_READ|FILE_TXT);
     if(file_handle == INVALID_HANDLE) {
         Print("ERROR: 无法打开参数文件: ", filePath, ", 错误码: ", GetLastError());
-        g_CurrentParams.error_message = "文件打开失败";
         return false;
     }
     
@@ -235,23 +237,26 @@ bool LoadParameterPack(string filePath)
     
     if(StringLen(json_content) == 0) {
         Print("ERROR: 参数文件为空");
-        g_CurrentParams.error_message = "文件内容为空";
         return false;
     }
     
     Print("LoadParameterPack: 文件读取成功，长度: ", StringLen(json_content));
     
-    // 解析 JSON 内容
-    if(!ParseParameterJSON(json_content, g_CurrentParams)) {
+    // 解析 JSON 内容到临时参数包
+    if(!ParseParameterJSON(json_content, temp_params)) {
         Print("ERROR: JSON 解析失败");
         return false;
     }
     
-    // 校验参数
-    if(!ValidateParameters(g_CurrentParams)) {
-        Print("ERROR: 参数校验失败: ", g_CurrentParams.error_message);
+    // 校验临时参数包
+    if(!ValidateParameters(temp_params)) {
+        Print("ERROR: 参数校验失败: ", temp_params.error_message);
         return false;
     }
+    
+    // 校验通过，更新全局参数
+    g_CurrentParams = temp_params;
+    g_CurrentParams.is_valid = true;
     
     Print("LoadParameterPack: 参数加载成功");
     Print("  版本: ", g_CurrentParams.version);
@@ -260,7 +265,6 @@ bool LoadParameterPack(string filePath)
     Print("  方向: ", g_CurrentParams.bias);
     Print("  有效期: ", TimeToString(g_CurrentParams.valid_from), " - ", TimeToString(g_CurrentParams.valid_to));
     
-    g_CurrentParams.is_valid = true;
     return true;
 }
 
@@ -341,6 +345,9 @@ bool ParseParameterJSON(string json, ParameterPack &params)
 //+------------------------------------------------------------------+
 void ParseTPLevelsAndRatios(string json, ParameterPack &params)
 {
+    int tp_count = 0;
+    int ratio_count = 0;
+    
     // 查找 tp_levels 数组
     int tp_levels_pos = StringFind(json, "\"tp_levels\"");
     if(tp_levels_pos >= 0) {
@@ -351,7 +358,7 @@ void ParseTPLevelsAndRatios(string json, ParameterPack &params)
             
             // 分割数组元素
             string tp_parts[];
-            int tp_count = StringSplit(tp_levels_str, ',', tp_parts);
+            tp_count = StringSplit(tp_levels_str, ',', tp_parts);
             
             params.tp_count = MathMin(tp_count, 10);  // 最多 10 个
             for(int i = 0; i < params.tp_count; i++) {
@@ -372,15 +379,27 @@ void ParseTPLevelsAndRatios(string json, ParameterPack &params)
             
             // 分割数组元素
             string ratio_parts[];
-            int ratio_count = StringSplit(tp_ratios_str, ',', ratio_parts);
+            ratio_count = StringSplit(tp_ratios_str, ',', ratio_parts);
             
-            int count = MathMin(ratio_count, params.tp_count);  // 与 tp_levels 数量一致
-            for(int i = 0; i < count; i++) {
+            // 检查长度一致性
+            if(ratio_count != tp_count) {
+                Print("WARN: tp_ratios 长度(", ratio_count, ") 与 tp_levels 长度(", tp_count, ") 不一致");
+                // 使用较小的长度，避免数组越界
+                int min_count = MathMin(ratio_count, tp_count);
+                params.tp_count = MathMin(min_count, 10);
+            }
+            
+            for(int i = 0; i < params.tp_count; i++) {
                 params.tp_ratios[i] = StringToDouble(ratio_parts[i]);
             }
             
-            Print("解析 tp_ratios: 数量=", count);
+            Print("解析 tp_ratios: 数量=", params.tp_count);
         }
+    }
+    
+    // 最终长度一致性检查
+    if(tp_count > 0 && ratio_count > 0 && tp_count != ratio_count) {
+        Print("ERROR: tp_levels 和 tp_ratios 长度不一致，tp_levels=", tp_count, ", tp_ratios=", ratio_count);
     }
 }
 
@@ -532,6 +551,9 @@ bool ValidateParameters(ParameterPack &params)
         params.error_message = "tp_levels 数组为空";
         return false;
     }
+    
+    // 注意：长度一致性已在 ParseTPLevelsAndRatios() 中检查
+    // 这里只需校验 tp_ratios 总和
     
     // 计算 tp_ratios 总和
     double ratio_sum = 0;
