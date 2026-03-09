@@ -244,7 +244,7 @@ bool LoadParameterPack(string filePath)
     
     // 解析 JSON 内容到临时参数包
     if(!ParseParameterJSON(json_content, temp_params)) {
-        Print("ERROR: JSON 解析失败");
+        Print("ERROR: JSON 解析失败: ", temp_params.error_message);
         return false;
     }
     
@@ -331,7 +331,7 @@ bool ParseParameterJSON(string json, ParameterPack &params)
     
     // 解析数组字段
     if(!ParseTPLevelsAndRatios(json, params)) {
-        Print("ERROR: tp_levels/tp_ratios 解析失败");
+        Print("ERROR: tp_levels/tp_ratios 解析失败: ", params.error_message);
         return false;
     }
     ParsePatterns(json, params);
