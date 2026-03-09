@@ -383,6 +383,18 @@ impl CronService {
                 }
                 (content, metadata)
             }
+            "agent" => {
+                let content = job.payload.message.clone();
+                let metadata = serde_json::json!({
+                    "job_id": job.id,
+                    "job_name": job.name,
+                    "cron_agent": true,
+                    "deliver": job.payload.deliver,
+                    "deliver_channel": job.payload.channel,
+                    "deliver_to": job.payload.to,
+                });
+                (content, metadata)
+            }
             _ => {
                 error!(job_id = %job.id, kind = %job.payload.kind, "Unknown cron payload kind");
                 return;
@@ -519,6 +531,35 @@ mod tests {
         }
     }
 
+    fn test_agent_job() -> CronJob {
+        let now_ms = Utc::now().timestamp_millis();
+        CronJob {
+            id: "job-agent-1".to_string(),
+            name: "news digest".to_string(),
+            enabled: true,
+            schedule: crate::job::JobSchedule {
+                kind: ScheduleKind::Every,
+                at_ms: None,
+                every_ms: Some(60_000),
+                expr: None,
+                tz: None,
+            },
+            payload: crate::job::JobPayload {
+                kind: "agent".to_string(),
+                message: "请搜索美国伊朗最新新闻并整理摘要".to_string(),
+                deliver: true,
+                channel: Some("telegram".to_string()),
+                to: Some("12345".to_string()),
+                script_kind: None,
+                skill_name: None,
+            },
+            state: crate::job::JobState::default(),
+            created_at_ms: now_ms,
+            updated_at_ms: now_ms,
+            delete_after_run: false,
+        }
+    }
+
     #[test]
     fn test_apply_route_agent_id_inserts_metadata() {
         let mut metadata = serde_json::json!({"job_id":"1"});
@@ -583,5 +624,26 @@ mod tests {
             emitter.priorities().last().copied(),
             Some(EventPriority::Critical)
         );
+    }
+
+    #[tokio::test]
+    async fn test_execute_agent_job_sends_plain_cron_message_without_fast_path_flags() {
+        let paths = Paths::with_base(
+            std::env::temp_dir().join(format!("blockcell-cron-service-{}", uuid::Uuid::new_v4())),
+        );
+        let (tx, mut rx) = mpsc::channel(1);
+        let service = CronService::new(paths, tx);
+
+        service.execute_job(&test_agent_job()).await;
+
+        let message = rx.recv().await.expect("receive cron inbound message");
+        assert_eq!(message.channel, "cron");
+        assert_eq!(message.content, "请搜索美国伊朗最新新闻并整理摘要");
+        assert_eq!(
+            message.metadata.get("cron_agent").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert!(message.metadata.get("reminder").is_none());
+        assert!(message.metadata.get("skill_script").is_none());
     }
 }

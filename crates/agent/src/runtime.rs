@@ -1468,6 +1468,37 @@ impl AgentRuntime {
 
     pub async fn process_message(&mut self, msg: InboundMessage) -> Result<String> {
         let session_key = msg.session_key();
+        let cron_deliver_target = if msg.channel == "cron"
+            && msg
+                .metadata
+                .get("cron_agent")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        {
+            if let Some(true) = msg.metadata.get("deliver").and_then(|v| v.as_bool()) {
+                if let (Some(channel), Some(to)) = (
+                    msg.metadata.get("deliver_channel").and_then(|v| v.as_str()),
+                    msg.metadata.get("deliver_to").and_then(|v| v.as_str()),
+                ) {
+                    if !channel.is_empty() && !to.is_empty() {
+                        Some((channel.to_string(), to.to_string()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let persist_session_key = if let Some((channel, to)) = &cron_deliver_target {
+            blockcell_core::build_session_key(channel, to)
+        } else {
+            session_key.clone()
+        };
         info!(session_key = %session_key, "Processing message");
         self.update_main_session_target(&msg);
 
@@ -2394,7 +2425,7 @@ impl AgentRuntime {
         let final_response = strip_fake_tool_calls(&final_response);
 
         // Save session
-        self.session_store.save(&session_key, &history)?;
+        self.session_store.save(&persist_session_key, &history)?;
 
         // L2 incremental session summary (P2-1):
         // When history is long enough, build an extractive summary and store it.
@@ -2403,11 +2434,61 @@ impl AgentRuntime {
             if let Some(ref store) = self.memory_store {
                 let summary = Self::build_extractive_summary(&history);
                 if !summary.is_empty() {
-                    if let Err(e) = store.upsert_session_summary(&session_key, &summary) {
+                    if let Err(e) = store.upsert_session_summary(&persist_session_key, &summary) {
                         debug!(error = %e, "Failed to upsert session summary");
                     }
                 }
             }
+        }
+
+        if msg.channel == "cron"
+            && msg
+                .metadata
+                .get("cron_agent")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        {
+            if let Some(tx) = &self.outbound_tx {
+                let mut outbound = OutboundMessage::new(&msg.channel, &msg.chat_id, &final_response);
+                outbound.account_id = msg.account_id.clone();
+                outbound.media = collected_media.clone();
+                outbound.metadata = extract_reply_metadata(&msg);
+                let _ = tx.send(outbound).await;
+            }
+
+            if let Some((channel, to)) = cron_deliver_target {
+                if channel == "ws" {
+                    if let Some(ref event_tx) = self.event_tx {
+                        let event = serde_json::json!({
+                            "type": "message_done",
+                            "agent_id": self.agent_id.clone().unwrap_or_else(|| "default".to_string()),
+                            "chat_id": to,
+                            "task_id": "",
+                            "content": final_response,
+                            "tool_calls": 0,
+                            "duration_ms": 0,
+                            "media": collected_media,
+                            "background_delivery": true,
+                            "delivery_kind": "cron",
+                            "cron_kind": "agent",
+                        });
+                        let _ = event_tx.send(event.to_string());
+                    }
+                    if let Some(tx) = &self.outbound_tx {
+                        let mut outbound = OutboundMessage::new(&channel, &to, &final_response);
+                        outbound.account_id = msg.account_id.clone();
+                        outbound.media = collected_media.clone();
+                        let _ = tx.send(outbound).await;
+                    }
+                } else if let Some(tx) = &self.outbound_tx {
+                    let mut outbound = OutboundMessage::new(&channel, &to, &final_response);
+                    outbound.account_id = msg.account_id.clone();
+                    outbound.media = collected_media.clone();
+                    let _ = tx.send(outbound).await;
+                }
+            }
+
+            return Ok(final_response);
         }
 
         // Emit message_done event to WebSocket clients.
@@ -4242,6 +4323,81 @@ mod tests {
         assert_eq!(outbound.chat_id, "chat-1");
         assert!(outbound.content.contains("Report ready"));
         assert!(outbound.content.contains("System updates") || outbound.content.contains("🗂️"));
+    }
+
+    #[tokio::test]
+    async fn test_cron_agent_delivery_emits_ws_event_for_deliver_target() {
+        let mut runtime = test_runtime();
+        let (event_tx, mut event_rx) = broadcast::channel(8);
+        runtime.set_event_tx(event_tx);
+
+        let msg = InboundMessage {
+            channel: "cron".to_string(),
+            account_id: None,
+            sender_id: "cron".to_string(),
+            chat_id: "job-123".to_string(),
+            content: "任务完成摘要".to_string(),
+            media: vec![],
+            metadata: serde_json::json!({
+                "deliver": true,
+                "deliver_channel": "ws",
+                "deliver_to": "webui-chat-1",
+                "cron_agent": true,
+            }),
+            timestamp_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let result = runtime.process_message(msg).await.expect("process cron message");
+        assert!(!result.is_empty());
+
+        let payload = event_rx.recv().await.expect("receive ws event");
+        let json: serde_json::Value = serde_json::from_str(&payload).expect("parse ws event");
+        assert_eq!(json["type"], "message_done");
+        assert_eq!(json["chat_id"], "webui-chat-1");
+        assert_eq!(json["content"], result);
+        assert_eq!(json["background_delivery"], true);
+        assert_eq!(json["delivery_kind"], "cron");
+        assert_eq!(json["cron_kind"], "agent");
+    }
+
+    #[tokio::test]
+    async fn test_cron_agent_persists_to_deliver_session_not_cron_job_session() {
+        let mut runtime = test_runtime();
+
+        let msg = InboundMessage {
+            channel: "cron".to_string(),
+            account_id: None,
+            sender_id: "cron".to_string(),
+            chat_id: "job-456".to_string(),
+            content: "搜索美伊战争最新消息，并将结果发给用户。".to_string(),
+            media: vec![],
+            metadata: serde_json::json!({
+                "deliver": true,
+                "deliver_channel": "ws",
+                "deliver_to": "webui-chat-2",
+                "cron_agent": true,
+            }),
+            timestamp_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let result = runtime.process_message(msg).await.expect("process cron message");
+        assert!(!result.is_empty());
+
+        let ws_session_key = blockcell_core::build_session_key("ws", "webui-chat-2");
+        let cron_session_key = blockcell_core::build_session_key("cron", "job-456");
+
+        let ws_history = runtime
+            .session_store
+            .load(&ws_session_key)
+            .expect("load ws session history");
+        assert!(!ws_history.is_empty());
+        assert!(ws_history.iter().any(|m| match &m.content {
+            serde_json::Value::String(s) => s.contains("搜索美伊战争最新消息"),
+            _ => false,
+        }));
+
+        let cron_path = runtime.paths.session_file(&cron_session_key);
+        assert!(!cron_path.exists(), "cron job session file should not be created");
     }
 
     #[tokio::test]

@@ -97,9 +97,25 @@ fn execute_cron_action_with_paths(
 
             let job_id = Uuid::new_v4().to_string();
 
+            let mode = params.get("mode").and_then(|v| v.as_str());
             let skill_name = params.get("skill_name").and_then(|v| v.as_str());
-            let payload_kind = if skill_name.is_some() { "script" } else { "reminder" };
-            let script_kind = skill_name.map(|sn| resolve_skill_payload_kind(paths, Some(sn)));
+            let payload_kind = match mode {
+                Some("agent") => "agent",
+                Some("script") => "script",
+                Some("reminder") => "reminder",
+                Some(_) | None => {
+                    if skill_name.is_some() {
+                        "script"
+                    } else {
+                        "reminder"
+                    }
+                }
+            };
+            let script_kind = if payload_kind == "script" {
+                skill_name.map(|sn| resolve_skill_payload_kind(paths, Some(sn)))
+            } else {
+                None
+            };
 
             let deliver = !matches!(origin_channel, "cli" | "cron" | "ghost" | "");
             let mut payload = json!({
@@ -252,7 +268,7 @@ impl Tool for CronTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "cron",
-            description: "Manage scheduled tasks (cron jobs). You MUST provide `action`. action='add': requires `name` + `message` and exactly one schedule field from `delay_seconds`, `at_ms`, `every_seconds`, or `cron_expr`; optional `delete_after_run` and `skill_name`. action='list': no extra params. action='remove': requires `job_id`.",
+            description: "Manage scheduled tasks (cron jobs). You MUST provide `action`. action='add': requires `name` + `message` and exactly one schedule field from `delay_seconds`, `at_ms`, `every_seconds`, or `cron_expr`; optional `delete_after_run`, `mode`, and `skill_name`. action='list': no extra params. action='remove': requires `job_id`.",
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -289,13 +305,18 @@ impl Tool for CronTool {
                         "type": "boolean",
                         "description": "(add) If true, the job will be deleted after it runs once. Default false (job is disabled instead)."
                     },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["reminder", "script", "agent"],
+                        "description": "(add) Optional execution mode. `reminder` sends fixed text directly. `script` directly runs a skill script and requires `skill_name`. `agent` sends the message into the normal agent LLM/tool loop so it can call tools like web_search. If omitted, defaults to `script` when `skill_name` is provided, otherwise `reminder`."
+                    },
                     "job_id": {
                         "type": "string",
                         "description": "(remove) The job ID (or prefix) to remove"
                     },
                     "skill_name": {
                         "type": "string",
-                        "description": "(add) Optional. If set, the cron job will directly execute the named skill script (SKILL.rhai or SKILL.py). If omitted, the job is treated as a plain reminder and will be delivered directly without going through the LLM. E.g. 'stock_monitor', 'daily_finance_report'."
+                        "description": "(add) Optional. Used with `mode='script'` to directly execute the named skill script (SKILL.rhai or SKILL.py). E.g. 'stock_monitor', 'daily_finance_report'."
                     }
                 },
                 "required": ["action"]
@@ -304,7 +325,7 @@ impl Tool for CronTool {
     }
 
     fn prompt_rule(&self, _ctx: &crate::PromptContext) -> Option<String> {
-        Some("- **定时任务 (cron)**: 用户要求定时执行某项任务时，先判断是不是**纯提醒**。如果只是到点发送一句固定提醒（如起床提醒、喝水提醒），直接用 `message` 写最终要发给用户的内容，不要把它写成需要再次分析或执行的任务；这种情况不要设置 `skill_name`，触发时会直接发送给用户，不经过 LLM。若任务需要真正执行脚本/技能，再先调用 `list_skills` 查看可用技能列表，找到匹配技能后在 `cron` 工具中设置 `skill_name='...'`，触发时直接执行技能脚本。 [TIMEZONE] `cron_expr` 使用 UTC 时间，中国用户（UTC+8）说每天 9 点应填 `cron_expr='0 0 1 * * *'`（UTC 1:00 = 北京时间 9:00）。一次性任务设 `delete_after_run=true`；周期任务用 `cron_expr` 或 `every_seconds`。".to_string())
+        Some("- **定时任务 (cron)**: 用户要求定时执行某项任务时，先判断执行模式。**纯提醒**（如起床提醒、喝水提醒）用 `mode='reminder'`，`message` 直接写最终发给用户的话，不要写成待分析任务；触发时会直接发送，不经过 LLM。若任务需要真正执行某个技能脚本，先调用 `list_skills` 查找技能，再用 `mode='script'` 并设置 `skill_name='...'`。若任务本身就是一段需要模型理解、调用工具、再整理结果的指令（如定时搜索新闻、抓取网页、汇总情报），用 `mode='agent'`，这样触发时会进入正常 agent LLM/tool loop。`mode` 省略时：有 `skill_name` 默认 `script`，否则默认 `reminder`。 [TIMEZONE] `cron_expr` 使用 UTC 时间，中国用户（UTC+8）说每天 9 点应填 `cron_expr='0 0 1 * * *'`（UTC 1:00 = 北京时间 9:00）。一次性任务设 `delete_after_run=true`；周期任务用 `cron_expr` 或 `every_seconds`。".to_string())
     }
 
     fn validate(&self, params: &Value) -> Result<()> {
@@ -333,6 +354,23 @@ impl Tool for CronTool {
                     return Err(Error::Validation(
                         "Must specify one of: at_ms, delay_seconds, every_seconds, or cron_expr"
                             .to_string(),
+                    ));
+                }
+                let mode = params.get("mode").and_then(|v| v.as_str());
+                match mode {
+                    Some("reminder") | Some("script") | Some("agent") | None => {}
+                    Some(other) => {
+                        return Err(Error::Validation(format!(
+                            "Invalid mode for add: {}",
+                            other
+                        )));
+                    }
+                }
+                if matches!(mode, Some("script"))
+                    && params.get("skill_name").and_then(|v| v.as_str()).is_none()
+                {
+                    return Err(Error::Validation(
+                        "mode='script' requires skill_name".to_string(),
                     ));
                 }
             }
@@ -413,6 +451,53 @@ mod tests {
             "12345",
         );
         assert!(r.is_ok(), "unexpected error: {:?}", r.err());
+        let _ = std::fs::remove_dir_all(paths.base);
+    }
+
+    #[test]
+    fn test_cron_validate_add_agent_mode() {
+        let tool = CronTool;
+        assert!(tool
+            .validate(&json!({
+                "action": "add", "name": "test", "message": "search latest news", "delay_seconds": 60, "mode": "agent"
+            }))
+            .is_ok());
+    }
+
+    #[test]
+    fn test_cron_validate_add_script_mode_requires_skill_name() {
+        let tool = CronTool;
+        assert!(tool
+            .validate(&json!({
+                "action": "add", "name": "test", "message": "run job", "delay_seconds": 60, "mode": "script"
+            }))
+            .is_err());
+    }
+
+    #[test]
+    fn test_cron_add_agent_mode_persists_agent_payload() {
+        let paths = temp_paths("agent");
+        let r = execute_cron_action_with_paths(
+            &paths,
+            "add",
+            &json!({
+                "name": "agent-task",
+                "message": "请搜索美国伊朗最新新闻并总结",
+                "delay_seconds": 60,
+                "mode": "agent"
+            }),
+            "telegram",
+            "12345",
+        );
+        assert!(r.is_ok(), "unexpected error: {:?}", r.err());
+
+        let store = load_store(&paths).expect("load cron store");
+        let payload_kind = store.jobs[0]
+            .get("payload")
+            .and_then(|v| v.get("kind"))
+            .and_then(|v| v.as_str());
+        assert_eq!(payload_kind, Some("agent"));
+
         let _ = std::fs::remove_dir_all(paths.base);
     }
 
