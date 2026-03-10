@@ -69,7 +69,7 @@ domain_experts/forex/ea/
 ### 3. 配置参数包路径
 
 确保参数包文件路径正确配置：
-- 默认路径：`C:\Users\Trader\workspace\ea\signal_pack.json`
+- 默认路径：`<终端数据目录>\MQL4\Files\signal_pack.json`
 - 可在 EA 输入参数中修改
 
 ## 使用方法
@@ -128,11 +128,18 @@ domain_experts/forex/ea/
 
 | 参数名 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| ParamFilePath | string | C:\Users\Trader\workspace\ea\signal_pack.json | 参数包文件路径 |
+| ParamFilePath | string | `<终端数据目录>\MQL4\Files\signal_pack.json` | 参数包文件路径 |
 | DryRun | bool | false | Dry Run 模式（不下真实订单） |
 | LogLevel | string | INFO | 日志级别：DEBUG, INFO, WARN, ERROR |
 | ParamCheckInterval | int | 300 | 参数检查间隔（秒） |
 | ServerUTCOffset | int | 2 | 服务器时区偏移（小时） |
+| BacktestParamJSON | string | 空 | 回测模式下的内嵌参数 JSON；非空时优先于文件参数 |
+| BacktestStartDate | datetime | 0 | 回测信号评估起始时间（0=不限制） |
+| BacktestEndDate | datetime | 0 | 回测信号评估结束时间（0=不限制） |
+
+说明：
+- 回测模式且 `BacktestParamJSON` 非空时，EA 会跳过文件参数热更新，避免覆盖内嵌参数。
+- `BacktestStartDate` / `BacktestEndDate` 仅影响开仓信号评估，不影响持仓管理逻辑。
 
 ## EA 状态
 

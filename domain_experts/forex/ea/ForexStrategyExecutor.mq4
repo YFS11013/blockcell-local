@@ -14,17 +14,29 @@
 //| 引入模块                                                          |
 //+------------------------------------------------------------------+
 #include "include/TimeUtils.mqh"
+#include "include/Logger.mqh"
 #include "include/ParameterLoader.mqh"
 #include "include/StrategyEngine.mqh"
+#include "include/RiskManager.mqh"
+#include "include/OrderExecutor.mqh"
+#include "include/TimeFilter.mqh"
+#include "include/PositionManager.mqh"
 
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
-input string ParamFilePath = "";  // 参数包文件路径（空则使用默认路径）
+input string ParamFilePath = "";              // 参数包文件路径（空则使用默认路径）
 input bool DryRun = false;                    // Dry Run 模式（不下真实订单）
 input string LogLevel = "INFO";               // 日志级别：DEBUG, INFO, WARN, ERROR
 input int ParamCheckInterval = 300;           // 参数检查间隔（秒）
 input int ServerUTCOffset = 2;                // 服务器时区偏移（小时），例如：+2 表示 UTC+2
+
+//+------------------------------------------------------------------+
+//| 回测模式专用参数                                                  |
+//+------------------------------------------------------------------+
+input string BacktestParamJSON = "";          // 回测模式：内嵌参数 JSON（留空则从文件加载）
+input datetime BacktestStartDate = 0;         // 回测开始日期（0=使用默认）
+input datetime BacktestEndDate = 0;           // 回测结束日期（0=使用默认）
 
 //+------------------------------------------------------------------+
 //| 全局变量                                                          |
@@ -40,15 +52,82 @@ enum EAState {
 
 EAState g_CurrentState = STATE_INITIALIZING;
 
+// 回测模式标记
+bool g_IsBacktestMode = false;
+
 // 参数检查
 datetime g_LastParamCheck = 0;
 
 // K 线跟踪
 datetime g_LastBarTime = 0;
 
-// 信号跟踪
-bool g_PendingSignal = false;
-datetime g_SignalTime = 0;
+// 信号跟踪与缓存（已废弃，不再使用）
+// bool g_PendingSignal = false;
+// SignalResult g_CachedSignal;  // 缓存的信号快照
+
+//+------------------------------------------------------------------+
+//| 检测是否在回测模式                                                |
+//+------------------------------------------------------------------+
+bool IsBacktestMode()
+{
+    // MT4 在回测模式下会设置这个隐藏参数
+    // 也可以通过检查 MQL4 内部状态来判断
+    return IsTesting() || IsOptimization();
+}
+
+//+------------------------------------------------------------------+
+//| 检查是否在回测日期窗口内                                           |
+//+------------------------------------------------------------------+
+bool IsWithinBacktestDateRange(datetime bar_time)
+{
+    if(!g_IsBacktestMode) {
+        return true;
+    }
+    
+    if(BacktestStartDate > 0 && bar_time < BacktestStartDate) {
+        return false;
+    }
+    
+    if(BacktestEndDate > 0 && bar_time > BacktestEndDate) {
+        return false;
+    }
+    
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| 加载内嵌参数（回测模式使用）                                      |
+//+------------------------------------------------------------------+
+bool LoadEmbeddedParameters(string json_content)
+{
+    LogInfo("EA", "加载内嵌参数（回测模式）");
+    
+    // 使用临时参数包
+    ParameterPack temp_params;
+    InitParameterPack(temp_params);
+    
+    // 解析 JSON 内容
+    if(!ParseParameterJSON(json_content, temp_params)) {
+        LogError("EA", "内嵌参数 JSON 解析失败: " + temp_params.error_message);
+        return false;
+    }
+    
+    // 校验参数
+    if(!ValidateParameters(temp_params)) {
+        LogError("EA", "内嵌参数校验失败: " + temp_params.error_message);
+        return false;
+    }
+    
+    // 更新全局参数
+    g_CurrentParams = temp_params;
+    g_CurrentParams.is_valid = true;
+    
+    LogInfo("EA", "内嵌参数加载成功");
+    LogInfo("EA", "  版本: " + g_CurrentParams.version);
+    LogInfo("EA", "  有效期: " + TimeToString(g_CurrentParams.valid_from) + " - " + TimeToString(g_CurrentParams.valid_to));
+    
+    return true;
+}
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
@@ -58,6 +137,9 @@ int OnInit()
     Print("========================================");
     Print("ForexStrategyExecutor V1.0.0 启动中...");
     Print("========================================");
+    
+    // 检测回测模式
+    g_IsBacktestMode = IsBacktestMode();
     
     // 验证输入参数
     if(!ValidateInputParameters()) {
@@ -74,45 +156,84 @@ int OnInit()
     }
     
     // 初始化日志系统
-    InitLogger();
-    LogInfo("EA 初始化开始");
+    InitLogger(LogLevel);
+    
+    // 记录回测模式状态
+    if(g_IsBacktestMode) {
+        LogInfo("EA", "========== 回测模式 ==========");
+    }
+    LogInfo("EA", "EA 初始化开始");
+    
+    // 初始化持仓管理器
+    InitPositionManager();
+    
+    // 初始化风险管理器
+    InitRiskState();
     
     // 记录配置信息
-    LogInfo("配置信息:");
-    LogInfo("  - 参数文件路径: " + param_file_path);
-    LogInfo("  - Dry Run 模式: " + (DryRun ? "启用" : "禁用"));
-    LogInfo("  - 日志级别: " + LogLevel);
-    LogInfo("  - 参数检查间隔: " + IntegerToString(ParamCheckInterval) + " 秒");
-    LogInfo("  - 服务器 UTC 偏移: " + IntegerToString(ServerUTCOffset) + " 小时");
+    LogInfo("EA", "配置信息:");
+    LogInfo("EA", "  - 回测模式: " + (g_IsBacktestMode ? "是" : "否"));
+    LogInfo("EA", "  - 参数文件路径: " + param_file_path);
+    LogInfo("EA", "  - Dry Run 模式: " + (DryRun ? "启用" : "禁用"));
+    LogInfo("EA", "  - 日志级别: " + LogLevel);
+    LogInfo("EA", "  - 参数检查间隔: " + IntegerToString(ParamCheckInterval) + " 秒");
+    LogInfo("EA", "  - 服务器 UTC 偏移: " + IntegerToString(ServerUTCOffset) + " 小时");
+    if(g_IsBacktestMode) {
+        LogInfo("EA", "  - 回测参数源: " + (StringLen(BacktestParamJSON) > 0 ? "BacktestParamJSON（内嵌）" : "参数文件"));
+        LogInfo("EA", "  - 回测日期窗口: " + 
+                (BacktestStartDate > 0 ? TimeToString(BacktestStartDate) : "未设置") + " ~ " +
+                (BacktestEndDate > 0 ? TimeToString(BacktestEndDate) : "未设置"));
+    }
     
     // 初始化 K 线跟踪
     g_LastBarTime = Time[0];
-    LogInfo("初始 K 线时间: " + TimeToString(g_LastBarTime));
+    LogInfo("EA", "初始 K 线时间: " + TimeToString(g_LastBarTime));
     
     // V1 固定品种和周期校验
     if(Symbol() != "EURUSD") {
-        LogError("当前图表品种为 " + Symbol() + "，V1 仅支持 EURUSD");
+        LogError("EA", "当前图表品种为 " + Symbol() + "，V1 仅支持 EURUSD");
         return INIT_FAILED;
     }
     
     if(Period() != PERIOD_H4) {
-        LogError("当前图表周期为 " + IntegerToString(Period()) + " 分钟，V1 仅支持 H4 (240 分钟)");
+        LogError("EA", "当前图表周期为 " + IntegerToString(Period()) + " 分钟，V1 仅支持 H4 (240 分钟)");
         return INIT_FAILED;
     }
     
-    LogInfo("品种和周期校验通过: EURUSD H4");
+    LogInfo("EA", "品种和周期校验通过: EURUSD H4");
     
     // 加载参数包
     g_CurrentState = STATE_LOADING_PARAMS;
-    if(!LoadParameterPack(param_file_path)) {
-        LogError("参数包加载失败，进入 Safe Mode");
+    
+    bool params_loaded = false;
+    
+    if(g_IsBacktestMode) {
+        // 回测模式：优先使用内嵌参数
+        if(StringLen(BacktestParamJSON) > 0) {
+            LogInfo("EA", "使用内嵌参数（BacktestParamJSON）");
+            params_loaded = LoadEmbeddedParameters(BacktestParamJSON);
+        } else {
+            LogInfo("EA", "内嵌参数为空，将从文件加载参数");
+            params_loaded = LoadParameterPack(param_file_path);
+        }
+    } else {
+        // 实盘模式：从文件加载参数
+        params_loaded = LoadParameterPack(param_file_path);
+    }
+    
+    if(!params_loaded) {
+        LogError("EA", "参数包加载失败，进入 Safe Mode");
         g_CurrentState = STATE_SAFE_MODE;
     } else {
-        LogInfo("参数包加载成功，进入运行状态");
+        LogInfo("EA", "参数包加载成功，进入运行状态");
         g_CurrentState = STATE_RUNNING;
     }
     
-    LogInfo("EA 初始化完成，当前状态: " + StateToString(g_CurrentState));
+    if(g_IsBacktestMode) {
+        LogInfo("EA", "========== 回测模式初始化完成 ==========");
+    }
+    
+    LogInfo("EA", "EA 初始化完成，当前状态: " + StateToString(g_CurrentState));
     Print("========================================");
     Print("ForexStrategyExecutor 初始化完成");
     Print("当前状态: " + StateToString(g_CurrentState));
@@ -131,15 +252,23 @@ void OnDeinit(const int reason)
     Print("停止原因: " + DeInitReasonToString(reason));
     Print("========================================");
     
-    LogInfo("EA 停止，原因: " + DeInitReasonToString(reason));
+    LogInfo("EA", "EA 停止，原因: " + DeInitReasonToString(reason));
     
     // 保存状态（如果需要）
     SaveEAState();
     
+    // 清理持仓管理器
+    CleanupPositionManager();
+    
     // 清理资源
     CleanupResources();
     
-    LogInfo("EA 已停止");
+    // 写入停机末条日志
+    LogInfo("EA", "EA 已停止");
+    
+    // 最后关闭日志系统
+    CloseLogger();
+    
     Print("ForexStrategyExecutor 已停止");
 }
 
@@ -153,12 +282,12 @@ void OnTick()
     if(Time[0] != g_LastBarTime) {
         isNewBar = true;
         g_LastBarTime = Time[0];
-        LogDebug("检测到新 K 线: " + TimeToString(g_LastBarTime));
+        LogDebug("EA", "检测到新 K 线: " + TimeToString(g_LastBarTime));
     }
     
     // 定期检查参数更新
     if(TimeCurrent() - g_LastParamCheck >= ParamCheckInterval) {
-        LogDebug("定期检查参数更新...");
+        LogDebug("EA", "定期检查参数更新...");
         CheckParameterUpdate();
         g_LastParamCheck = TimeCurrent();
     }
@@ -168,34 +297,20 @@ void OnTick()
         case STATE_RUNNING:
             // 正常运行状态
             
-            // 如果有待执行的信号，在新 K 线开盘时执行
-            if(g_PendingSignal && isNewBar) {
-                // 执行前再次检查参数有效期
-                if(!IsParameterValid()) {
-                    LogWarn("待执行信号时参数已过期，取消执行并切换到 Safe Mode");
-                    g_PendingSignal = false;
-                    g_CurrentState = STATE_SAFE_MODE;
-                } else {
-                    LogInfo("检测到新 K 线，执行待开仓信号");
-                    ExecutePendingSignal();
-                    g_PendingSignal = false;
-                }
-            }
-            
-            // 在 K 线收盘时评估入场信号
             if(isNewBar) {
-                LogDebug("K 线收盘，评估入场信号...");
-                EvaluateEntrySignal();
+                // 新 K 线首 tick：评估刚收盘的 K 线（Time[1]），如果满足条件则立即执行
+                LogDebug("EA", "K 线收盘，评估入场信号...");
+                EvaluateAndExecuteSignal();
             }
             
             // 检查持仓状态
-            CheckPositions();
+            CheckPositionsWrapper();
             break;
             
         case STATE_SAFE_MODE:
             // 安全模式：只管理持仓，不开新仓
-            LogDebug("Safe Mode: 只管理持仓");
-            CheckPositions();
+            LogDebug("EA", "Safe Mode: 只管理持仓");
+            CheckPositionsWrapper();
             
             // 定期尝试恢复
             if(isNewBar) {
@@ -206,7 +321,7 @@ void OnTick()
         case STATE_LOADING_PARAMS:
         case STATE_INITIALIZING:
             // 这些状态不应该在 OnTick 中出现
-            LogWarn("OnTick 中检测到异常状态: " + StateToString(g_CurrentState));
+            LogWarn("EA", "OnTick 中检测到异常状态: " + StateToString(g_CurrentState));
             break;
     }
 }
@@ -235,6 +350,15 @@ bool ValidateInputParameters()
         return false;
     }
     
+    // 验证回测日期窗口
+    if(g_IsBacktestMode &&
+       BacktestStartDate > 0 &&
+       BacktestEndDate > 0 &&
+       BacktestStartDate >= BacktestEndDate) {
+        Print("ERROR: 回测日期窗口无效: BacktestStartDate 必须早于 BacktestEndDate");
+        return false;
+    }
+    
     return true;
 }
 
@@ -250,6 +374,14 @@ string StateToString(EAState state)
         case STATE_SAFE_MODE:      return "SAFE_MODE";
         default:                   return "UNKNOWN";
     }
+}
+
+//+------------------------------------------------------------------+
+//| 获取回测模式状态（供外部调用）                                    |
+//+------------------------------------------------------------------+
+bool IsBacktestModeEnabled()
+{
+    return g_IsBacktestMode;
 }
 
 //+------------------------------------------------------------------+
@@ -276,16 +408,15 @@ string DeInitReasonToString(int reason)
 //| 占位函数 - 将在后续模块中实现                                     |
 //+------------------------------------------------------------------+
 
-// 日志系统
-void InitLogger() { /* TODO: 实现日志初始化 */ }
-void LogDebug(string msg) { if(LogLevel == "DEBUG") Print("[DEBUG] " + msg); }
-void LogInfo(string msg) { if(LogLevel == "DEBUG" || LogLevel == "INFO") Print("[INFO] " + msg); }
-void LogWarn(string msg) { Print("[WARN] " + msg); }
-void LogError(string msg) { Print("[ERROR] " + msg); }
-
 // 参数更新检查
 void CheckParameterUpdate() { 
-    LogDebug("CheckParameterUpdate: 定期检查参数更新");
+    LogDebug("EA", "CheckParameterUpdate: 定期检查参数更新");
+    
+    // 回测内嵌参数模式下，禁止文件热更新覆盖内嵌参数
+    if(g_IsBacktestMode && StringLen(BacktestParamJSON) > 0) {
+        LogDebug("EA", "回测内嵌参数模式：跳过文件参数热更新");
+        return;
+    }
     
     // 确定参数文件路径
     string param_file_path = ParamFilePath;
@@ -295,16 +426,38 @@ void CheckParameterUpdate() {
     
     // 重新加载参数包
     if(LoadParameterPack(param_file_path)) {
-        LogInfo("参数包已更新");
+        LogInfo("EA", "参数包已更新");
+        
+        // 检查参数有效性
+        if(!IsParameterValid()) {
+            LogWarn("EA", "新参数包无效或已过期，切换到 Safe Mode");
+            g_CurrentState = STATE_SAFE_MODE;
+        }
+    } else {
+        // 加载失败，检查当前参数是否仍然有效
+        if(!IsParameterValid()) {
+            LogWarn("EA", "参数加载失败且当前参数已过期，切换到 Safe Mode");
+            g_CurrentState = STATE_SAFE_MODE;
+        }
     }
 }
 
-// 信号评估
-void EvaluateEntrySignal() { 
+//+------------------------------------------------------------------+
+//| 评估入场信号并立即执行（如果满足条件）                            |
+//| 在新 K 线首 tick 时调用，评估刚收盘的 K 线（Time[1]）             |
+//+------------------------------------------------------------------+
+void EvaluateAndExecuteSignal() {
     // 检查参数有效期
     if(!IsParameterValid()) {
-        LogWarn("参数无效或已过期，切换到 Safe Mode");
+        LogWarn("EA", "参数无效或已过期，切换到 Safe Mode");
         g_CurrentState = STATE_SAFE_MODE;
+        return;
+    }
+    
+    // 回测模式可选日期窗口过滤：仅限制开仓评估，不影响持仓管理
+    datetime signal_bar_time = Time[1];
+    if(!IsWithinBacktestDateRange(signal_bar_time)) {
+        LogDebug("EA", "信号 K 线不在回测日期窗口内，跳过开仓评估: " + TimeToString(signal_bar_time));
         return;
     }
     
@@ -314,40 +467,164 @@ void EvaluateEntrySignal() {
     // 评估信号
     SignalResult signal = EvaluateEntrySignal(params);
     
-    // 如果信号有效，标记为待执行
-    if(signal.is_valid) {
-        g_PendingSignal = true;
-        g_SignalTime = signal.signal_time;
-        LogInfo("检测到有效信号，等待下一根 K 线开盘执行");
+    // 如果信号无效，记录并返回
+    if(!signal.is_valid) {
+        LogInfo("EA", "信号评估: 拒绝 - " + signal.reject_reason);
+        return;
+    }
+    
+    // 信号有效，立即执行开仓
+    LogInfo("EA", "检测到有效信号，立即执行开仓");
+    LogDebug("EA", StringFormat("信号数据: entry=%.5f, sl=%.5f, signal_time=%s", 
+            signal.entry_price, signal.stop_loss, TimeToString(signal.signal_time)));
+    
+    // 检查风控条件
+    if(!CanOpenNewPosition(params.risk_daily_max_loss, 
+                          params.risk_consecutive_loss_limit, 
+                          params.max_spread_points)) {
+        LogWarn("EA", "风控检查失败，取消开仓");
+        return;
+    }
+    
+    // 检查时间过滤
+    if(IsInNewsBlackout(params.news_blackouts, params.blackout_count)) {
+        LogWarn("EA", "当前在新闻窗口内，取消开仓");
+        return;
+    }
+    
+    if(!IsInTradingSession(params.session_filter)) {
+        LogWarn("EA", "当前不在交易时段内，取消开仓");
+        return;
+    }
+    
+    // 计算开仓手数
+    double total_lots = CalculatePositionSize(signal.entry_price, signal.stop_loss, params.risk_per_trade);
+    
+    if(total_lots <= 0) {
+        LogError("EA", "计算手数失败或手数为 0，取消开仓");
+        return;
+    }
+    
+    LogInfo("EA", StringFormat("计算总手数: %.2f", total_lots));
+    
+    // 拆分手数（使用信号中的 TP 数据）
+    LotSplit splits[];
+    int tp_count = signal.tp_count;
+    
+    if(!SplitLots(total_lots, signal.tp_ratios, signal.tp_levels, tp_count, splits)) {
+        LogError("EA", "拆单失败，取消开仓");
+        return;
+    }
+    
+    // 检查 Dry Run 模式
+    if(DryRun) {
+        // Dry Run 模式：只记录日志，不执行真实订单
+        LogInfo("EA", "========== DRY RUN 模式 ==========");
+        LogInfo("EA", StringFormat("模拟开仓: 品种=%s, 入场=%.5f, 止损=%.5f, 总手数=%.2f",
+                Symbol(), signal.entry_price, signal.stop_loss, total_lots));
+        
+        for(int i = 0; i < tp_count; i++) {
+            LogInfo("EA", StringFormat("  订单 %d: 手数=%.2f, 止盈=%.5f", 
+                    i + 1, splits[i].lots, splits[i].tp_price));
+        }
+        
+        LogInfo("EA", "========== DRY RUN 模式结束 ==========");
+        return;
+    }
+    
+    // 执行真实开仓
+    int tickets[];
+    ArrayResize(tickets, tp_count);
+    
+    int success_count = OpenMultiplePositions(splits, tp_count, signal.entry_price, signal.stop_loss, 
+                                              (int)params.max_slippage_points, tickets);
+    
+    if(success_count == tp_count) {
+        LogInfo("EA", StringFormat("成功开仓 %d 个订单（全部成功）", tp_count));
+        for(int i = 0; i < tp_count; i++) {
+            LogInfo("EA", StringFormat("  订单 %d: Ticket=%d, 手数=%.2f, 止盈=%.5f", 
+                    i + 1, tickets[i], splits[i].lots, splits[i].tp_price));
+        }
+    } else if(success_count > 0) {
+        LogWarn("EA", StringFormat("部分开仓成功: %d/%d 订单", success_count, tp_count));
+        for(int i = 0; i < tp_count; i++) {
+            if(tickets[i] > 0) {
+                LogInfo("EA", StringFormat("  订单 %d: Ticket=%d, 手数=%.2f, 止盈=%.5f", 
+                        i + 1, tickets[i], splits[i].lots, splits[i].tp_price));
+            } else {
+                LogError("EA", StringFormat("  订单 %d: 开仓失败", i + 1));
+            }
+        }
     } else {
-        LogInfo("信号评估: 拒绝 - " + signal.reject_reason);
+        LogError("EA", "所有订单开仓失败");
     }
 }
 
-void ExecutePendingSignal() { 
-    LogInfo("ExecutePendingSignal: 占位实现");
-    /* TODO: 实现信号执行 */ 
-}
-
-// 持仓管理
-void CheckPositions() { 
-    /* TODO: 实现持仓检查 */ 
+// 持仓管理（包装函数）
+void CheckPositionsWrapper() { 
+    // 调用持仓管理器的检查函数
+    CheckPositions();
 }
 
 // 状态管理
 void TryRecoverFromSafeMode() { 
-    LogDebug("TryRecoverFromSafeMode: 占位实现");
-    /* TODO: 实现 Safe Mode 恢复 */ 
+    LogDebug("EA", "TryRecoverFromSafeMode: 尝试从 Safe Mode 恢复");
+    
+    // 回测内嵌参数模式下，只允许从内嵌参数恢复，避免切换到文件参数
+    if(g_IsBacktestMode && StringLen(BacktestParamJSON) > 0) {
+        if(LoadEmbeddedParameters(BacktestParamJSON) && IsParameterValid()) {
+            LogInfo("EA", "内嵌参数恢复有效，退出 Safe Mode");
+            g_CurrentState = STATE_RUNNING;
+        } else {
+            LogDebug("EA", "内嵌参数仍无效，保持 Safe Mode");
+        }
+        return;
+    }
+    
+    // 确定参数文件路径
+    string param_file_path = ParamFilePath;
+    if(StringLen(param_file_path) == 0) {
+        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
+    }
+    
+    // 尝试重新加载参数
+    if(LoadParameterPack(param_file_path)) {
+        // 检查参数是否有效
+        if(IsParameterValid()) {
+            LogInfo("EA", "参数已恢复有效，退出 Safe Mode");
+            g_CurrentState = STATE_RUNNING;
+        } else {
+            LogDebug("EA", "参数仍然无效，保持 Safe Mode");
+        }
+    } else {
+        LogDebug("EA", "参数加载失败，保持 Safe Mode");
+    }
 }
 
 void SaveEAState() { 
-    LogDebug("SaveEAState: 占位实现");
-    /* TODO: 实现状态保存 */ 
+    LogDebug("EA", "SaveEAState: 保存 EA 状态");
+    
+    // 使用 GlobalVariable 保存风险状态
+    GlobalVariableSet("FSE_DailyProfit", g_risk_state.daily_profit);
+    GlobalVariableSet("FSE_ConsecutiveLosses", g_risk_state.consecutive_losses);
+    GlobalVariableSet("FSE_CircuitBreakerUntil", (double)g_risk_state.circuit_breaker_until);
+    GlobalVariableSet("FSE_LastResetDate", g_risk_state.last_reset_date);
+    
+    LogDebug("EA", "风险状态已保存到 GlobalVariable");
 }
 
 void CleanupResources() { 
-    LogDebug("CleanupResources: 占位实现");
-    /* TODO: 实现资源清理 */ 
+    LogDebug("EA", "CleanupResources: 清理资源");
+    
+    // 清理全局变量（如果需要）
+    // GlobalVariableDel("FSE_DailyProfit");
+    // GlobalVariableDel("FSE_ConsecutiveLosses");
+    // GlobalVariableDel("FSE_CircuitBreakerUntil");
+    // GlobalVariableDel("FSE_LastResetDate");
+    
+    // 注意：通常不删除 GlobalVariable，以便 EA 重启后恢复状态
+    
+    LogDebug("EA", "资源清理完成");
 }
 
 //+------------------------------------------------------------------+
