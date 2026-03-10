@@ -1,6 +1,10 @@
-# BlockCell
+# BlueClaw
 
 <div align="center">
+
+<img src="screenshot/logo-blueclaw.png" alt="BlueClaw Logo" width="320" />
+
+**BlockCell进化为BlueClaw - 蓝虾**
 
 **用 Rust 构建的自进化 AI 多智能体框架**
 

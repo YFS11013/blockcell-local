@@ -1,4 +1,9 @@
-# BlockCell
+# BlueClaw
+<div align="center">
+
+<img src="screenshot/logo-blueclaw.png" alt="BlueClaw Logo" width="320" />
+
+**BlockCell进化为BlueClaw - 蓝虾**
 
 <div align="center">
 
