@@ -358,3 +358,52 @@ Notes:
 - default threshold includes `-MaxAgeMinutes 240`, so stale signal packs will intentionally produce `RESULT=FAILED` and write alerts.
 - production recommendation: keep `-RequireCurrentValidWindow=true` for scheduled health tasks when alerting should represent tradability.
 - log rotation defaults: `-MaxLogSizeKB 1024` and `-MaxLogBackups 10`; set `-MaxLogSizeKB 0` to disable rotation.
+
+## 9) Runner Log Cleanup Task (按天数/总大小清理)
+
+Scripts:
+
+- `cleanup_runner_logs.ps1` (执行一次清理：先按保留天数删旧，再按总大小上限继续淘汰最旧文件)
+- `register_runner_log_cleanup_task.ps1` (注册/查询/触发/删除周期清理任务)
+
+Default cleanup scope (relative to `.mt4_portable_runner`):
+
+- `logs`
+- `MQL4/Logs`
+- `tester/logs`
+
+Install periodic cleanup task (default every 180 minutes, task path `\blockcell\`):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/register_runner_log_cleanup_task.ps1" -Action Install -RetentionDays 14 -MaxTotalSizeMB 1024 -IntervalMinutes 180 -StartNow
+```
+
+Install with tighter limits (example: keep 7 days, cap 512MB, run every 60 minutes):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/register_runner_log_cleanup_task.ps1" -Action Install -RetentionDays 7 -MaxTotalSizeMB 512 -IntervalMinutes 60 -StartNow
+```
+
+Status:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/register_runner_log_cleanup_task.ps1" -Action Status
+```
+
+Run once immediately:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/register_runner_log_cleanup_task.ps1" -Action RunNow
+```
+
+Remove:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/register_runner_log_cleanup_task.ps1" -Action Remove
+```
+
+Manual dry run (no file deletion):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/cleanup_runner_logs.ps1" -RetentionDays 7 -MaxTotalSizeMB 512 -DryRun
+```
