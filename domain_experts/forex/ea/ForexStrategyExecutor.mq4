@@ -1,14 +1,16 @@
 //+------------------------------------------------------------------+
 //|                                      ForexStrategyExecutor.mq4   |
-//|                        MT4 Forex Strategy Executor System V1.0   |
+//|                        MT4 Forex Strategy Executor System V1.1   |
 //|                                                                  |
 //| 描述：AI 决策建议 + EA 确定性执行的外汇交易自动化方案             |
-//| 版本：V1.0.0                                                     |
+//| 版本：V1.1.1                                                     |
 //| 策略：EUR/USD H4 空头策略（EMA 趋势过滤 + 回踩确认 + 形态触发）   |
 //+------------------------------------------------------------------+
 #property copyright "MT4 Forex Strategy Executor"
-#property version   "1.00"
+#property version   "1.11"
 #property strict
+
+#define EA_VERSION "1.1.1"
 
 //+------------------------------------------------------------------+
 //| 引入模块                                                          |
@@ -25,10 +27,11 @@
 //+------------------------------------------------------------------+
 //| 输入参数                                                          |
 //+------------------------------------------------------------------+
-input string ParamFilePath = "";              // 参数包文件路径（空则使用默认路径）
+input string ParamFilePath = "";              // 参数包文件路径（空则使用 MQL4/Files/signal_pack.json）
 input bool DryRun = false;                    // Dry Run 模式（不下真实订单）
 input string LogLevel = "INFO";               // 日志级别：DEBUG, INFO, WARN, ERROR
 input int ParamCheckInterval = 300;           // 参数检查间隔（秒）
+input bool AutoDetectUTCOffset = true;        // 自动探测服务器 UTC 偏移（失败回退手工值）
 input int ServerUTCOffset = 2;                // 服务器时区偏移（小时），例如：+2 表示 UTC+2
 
 //+------------------------------------------------------------------+
@@ -57,13 +60,181 @@ bool g_IsBacktestMode = false;
 
 // 参数检查
 datetime g_LastParamCheck = 0;
+datetime g_LastParamLoadUtc = 0;
+string g_SourcePathMode = "default";
 
 // K 线跟踪
 datetime g_LastBarTime = 0;
 
-// 信号跟踪与缓存（已废弃，不再使用）
-// bool g_PendingSignal = false;
-// SignalResult g_CachedSignal;  // 缓存的信号快照
+// Signal_K 缓存（评估后只消费缓存，不重复评估）
+bool g_PendingSignal = false;
+SignalResult g_CachedSignal;
+datetime g_CachedSignalCreatedAt = 0;
+
+// 前置声明
+string StateToString(EAState state);
+void EvaluateAndExecuteSignal();
+string ResolveSourcePathMode();
+void MarkParameterLoadSuccess();
+string GetLastParamLoadUtcText();
+
+//+------------------------------------------------------------------+
+//| 解析参数文件路径（MT4 文件沙箱相对路径优先）                      |
+//+------------------------------------------------------------------+
+string ResolveParameterFilePath()
+{
+    if(StringLen(ParamFilePath) == 0) {
+        return "signal_pack.json";
+    }
+    return ParamFilePath;
+}
+
+//+------------------------------------------------------------------+
+//| 重置信号缓存结构                                                  |
+//+------------------------------------------------------------------+
+void ResetSignalResult(SignalResult &signal)
+{
+    signal.is_valid = false;
+    signal.reject_reason = "";
+    signal.entry_price = 0;
+    signal.stop_loss = 0;
+    signal.tp_count = 0;
+    signal.pattern = PATTERN_NONE;
+    signal.signal_time = 0;
+    signal.trend_ok = false;
+    signal.zone_ok = false;
+    signal.retracement_ok = false;
+    signal.pattern_ok = false;
+    
+    for(int i = 0; i < 10; i++) {
+        signal.tp_levels[i] = 0;
+        signal.tp_ratios[i] = 0;
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 复制信号缓存结构                                                  |
+//+------------------------------------------------------------------+
+void CopySignalResult(const SignalResult &src, SignalResult &dst)
+{
+    dst.is_valid = src.is_valid;
+    dst.reject_reason = src.reject_reason;
+    dst.entry_price = src.entry_price;
+    dst.stop_loss = src.stop_loss;
+    dst.tp_count = src.tp_count;
+    dst.pattern = src.pattern;
+    dst.signal_time = src.signal_time;
+    dst.trend_ok = src.trend_ok;
+    dst.zone_ok = src.zone_ok;
+    dst.retracement_ok = src.retracement_ok;
+    dst.pattern_ok = src.pattern_ok;
+    
+    for(int i = 0; i < 10; i++) {
+        dst.tp_levels[i] = src.tp_levels[i];
+        dst.tp_ratios[i] = src.tp_ratios[i];
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 清理待执行信号缓存                                                |
+//+------------------------------------------------------------------+
+void ClearPendingSignalCache(string reason)
+{
+    if(g_PendingSignal) {
+        LogDebug("EA", "清理信号缓存: " + reason);
+    }
+    
+    g_PendingSignal = false;
+    g_CachedSignalCreatedAt = 0;
+    ResetSignalResult(g_CachedSignal);
+}
+
+//+------------------------------------------------------------------+
+//| 记录 UTC 偏移诊断信息                                             |
+//+------------------------------------------------------------------+
+void LogUTCOffsetDiagnostics()
+{
+    int manual_offset_seconds = GetManualUTCOffsetSeconds();
+    int auto_offset_seconds = 0;
+    bool auto_detected = AutoDetectUTCOffset && TryDetectServerUTCOffsetSeconds(auto_offset_seconds);
+    int effective_offset_seconds = GetEffectiveUTCOffsetSeconds();
+    string effective_mode = auto_detected ? "AUTO" : "MANUAL_FALLBACK";
+    
+    LogInfo("EA", "UTC 偏移模式: " + (AutoDetectUTCOffset ? "自动探测+手工回退" : "仅手工配置"));
+    LogInfo("EA", "  - 手工偏移: " + FormatUTCOffsetSeconds(manual_offset_seconds));
+    
+    if(auto_detected) {
+        LogInfo("EA", "  - 自动探测偏移: " + FormatUTCOffsetSeconds(auto_offset_seconds));
+        
+        if(MathAbs((double)(auto_offset_seconds - manual_offset_seconds)) >= 3600.0) {
+            LogWarn("EA", StringFormat("自动偏移与手工偏移差异较大: auto=%s, manual=%s",
+                    FormatUTCOffsetSeconds(auto_offset_seconds),
+                    FormatUTCOffsetSeconds(manual_offset_seconds)));
+        }
+    } else if(AutoDetectUTCOffset) {
+        LogWarn("EA", "  - 自动探测失败，回退手工偏移");
+    }
+    
+    LogInfo("EA", "  - 生效偏移: " + FormatUTCOffsetSeconds(effective_offset_seconds) + " (" + effective_mode + ")");
+}
+
+//+------------------------------------------------------------------+
+//| 记录参数加载元信息（用于面板与诊断日志）                          |
+//+------------------------------------------------------------------+
+string ResolveSourcePathMode()
+{
+    if(g_IsBacktestMode && StringLen(BacktestParamJSON) > 0) {
+        return "embedded";
+    }
+    if(StringLen(ParamFilePath) == 0) {
+        return "default";
+    }
+    return "custom";
+}
+
+void MarkParameterLoadSuccess()
+{
+    g_LastParamLoadUtc = GetCurrentUTC();
+    g_SourcePathMode = ResolveSourcePathMode();
+}
+
+string GetLastParamLoadUtcText()
+{
+    if(g_LastParamLoadUtc <= 0) {
+        return "N/A";
+    }
+    return FormatISO8601(g_LastParamLoadUtc);
+}
+
+//+------------------------------------------------------------------+
+//| 更新图表状态面板（显示版本号）                                    |
+//+------------------------------------------------------------------+
+void UpdateStatusPanel()
+{
+    string param_version = g_CurrentParams.is_valid ? g_CurrentParams.version : "N/A";
+    string param_status = GetParameterStatus();
+    
+    int effective_offset_seconds = GetEffectiveUTCOffsetSeconds();
+    int auto_offset_seconds = 0;
+    bool auto_detected = AutoDetectUTCOffset && TryDetectServerUTCOffsetSeconds(auto_offset_seconds);
+    string offset_mode = auto_detected ? "AUTO" : "MANUAL";
+    
+    string panel = "";
+    panel += "ForexStrategyExecutor v" + EA_VERSION + "\n";
+    panel += "State: " + StateToString(g_CurrentState) + (DryRun ? " / DRY RUN" : "") + "\n";
+    panel += "param_version: " + param_version + " (" + param_status + ")\n";
+    panel += "last_param_load_utc: " + GetLastParamLoadUtcText() + "\n";
+    panel += "source_path_mode: " + g_SourcePathMode + "\n";
+    panel += "UTC Offset: " + FormatUTCOffsetSeconds(effective_offset_seconds) + " [" + offset_mode + "]";
+    
+    if(g_PendingSignal) {
+        panel += "\nSignal Cache: pending @" + TimeToString(g_CachedSignal.signal_time, TIME_DATE|TIME_MINUTES);
+    } else {
+        panel += "\nSignal Cache: none";
+    }
+    
+    Comment(panel);
+}
 
 //+------------------------------------------------------------------+
 //| 检测是否在回测模式                                                |
@@ -135,8 +306,12 @@ bool LoadEmbeddedParameters(string json_content)
 int OnInit()
 {
     Print("========================================");
-    Print("ForexStrategyExecutor V1.0.0 启动中...");
+    Print("ForexStrategyExecutor V" + EA_VERSION + " 启动中...");
     Print("========================================");
+    
+    ResetSignalResult(g_CachedSignal);
+    g_PendingSignal = false;
+    g_CachedSignalCreatedAt = 0;
     
     // 检测回测模式
     g_IsBacktestMode = IsBacktestMode();
@@ -147,12 +322,10 @@ int OnInit()
         return INIT_PARAMETERS_INCORRECT;
     }
     
-    // 确定参数文件路径
-    string param_file_path = ParamFilePath;
-    if(StringLen(param_file_path) == 0) {
-        // 使用默认路径
-        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
-        Print("使用默认参数路径: ", param_file_path);
+    // 确定参数文件路径（MT4 文件沙箱）
+    string param_file_path = ResolveParameterFilePath();
+    if(StringLen(ParamFilePath) == 0) {
+        Print("使用默认参数路径: MQL4/Files/" + param_file_path);
     }
     
     // 初始化日志系统
@@ -163,6 +336,7 @@ int OnInit()
         LogInfo("EA", "========== 回测模式 ==========");
     }
     LogInfo("EA", "EA 初始化开始");
+    LogInfo("EA", "EA 版本: " + EA_VERSION);
     
     // 初始化持仓管理器
     InitPositionManager();
@@ -177,7 +351,9 @@ int OnInit()
     LogInfo("EA", "  - Dry Run 模式: " + (DryRun ? "启用" : "禁用"));
     LogInfo("EA", "  - 日志级别: " + LogLevel);
     LogInfo("EA", "  - 参数检查间隔: " + IntegerToString(ParamCheckInterval) + " 秒");
+    LogInfo("EA", "  - UTC 偏移自动探测: " + (AutoDetectUTCOffset ? "启用" : "禁用"));
     LogInfo("EA", "  - 服务器 UTC 偏移: " + IntegerToString(ServerUTCOffset) + " 小时");
+    LogUTCOffsetDiagnostics();
     if(g_IsBacktestMode) {
         LogInfo("EA", "  - 回测参数源: " + (StringLen(BacktestParamJSON) > 0 ? "BacktestParamJSON（内嵌）" : "参数文件"));
         LogInfo("EA", "  - 回测日期窗口: " + 
@@ -225,6 +401,7 @@ int OnInit()
         LogError("EA", "参数包加载失败，进入 Safe Mode");
         g_CurrentState = STATE_SAFE_MODE;
     } else {
+        MarkParameterLoadSuccess();
         LogInfo("EA", "参数包加载成功，进入运行状态");
         g_CurrentState = STATE_RUNNING;
     }
@@ -234,6 +411,7 @@ int OnInit()
     }
     
     LogInfo("EA", "EA 初始化完成，当前状态: " + StateToString(g_CurrentState));
+    UpdateStatusPanel();
     Print("========================================");
     Print("ForexStrategyExecutor 初始化完成");
     Print("当前状态: " + StateToString(g_CurrentState));
@@ -253,6 +431,7 @@ void OnDeinit(const int reason)
     Print("========================================");
     
     LogInfo("EA", "EA 停止，原因: " + DeInitReasonToString(reason));
+    ClearPendingSignalCache("EA 停止");
     
     // 保存状态（如果需要）
     SaveEAState();
@@ -268,6 +447,7 @@ void OnDeinit(const int reason)
     
     // 最后关闭日志系统
     CloseLogger();
+    Comment("");
     
     Print("ForexStrategyExecutor 已停止");
 }
@@ -324,6 +504,8 @@ void OnTick()
             LogWarn("EA", "OnTick 中检测到异常状态: " + StateToString(g_CurrentState));
             break;
     }
+    
+    UpdateStatusPanel();
 }
 
 //+------------------------------------------------------------------+
@@ -345,7 +527,7 @@ bool ValidateInputParameters()
     }
     
     // 验证服务器 UTC 偏移
-    if(ServerUTCOffset < -12 || ServerUTCOffset > 14) {
+    if(ServerUTCOffset < -14 || ServerUTCOffset > 14) {
         Print("ERROR: 无效的服务器 UTC 偏移: " + IntegerToString(ServerUTCOffset));
         return false;
     }
@@ -418,109 +600,132 @@ void CheckParameterUpdate() {
         return;
     }
     
-    // 确定参数文件路径
-    string param_file_path = ParamFilePath;
-    if(StringLen(param_file_path) == 0) {
-        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
-    }
+    // 确定参数文件路径（MT4 文件沙箱）
+    string param_file_path = ResolveParameterFilePath();
     
     // 重新加载参数包
     if(LoadParameterPack(param_file_path)) {
+        MarkParameterLoadSuccess();
         LogInfo("EA", "参数包已更新");
+        ClearPendingSignalCache("参数包已更新");
         
         // 检查参数有效性
         if(!IsParameterValid()) {
             LogWarn("EA", "新参数包无效或已过期，切换到 Safe Mode");
+            ClearPendingSignalCache("新参数无效");
             g_CurrentState = STATE_SAFE_MODE;
         }
     } else {
         // 加载失败，检查当前参数是否仍然有效
         if(!IsParameterValid()) {
             LogWarn("EA", "参数加载失败且当前参数已过期，切换到 Safe Mode");
+            ClearPendingSignalCache("参数过期");
             g_CurrentState = STATE_SAFE_MODE;
         }
     }
 }
 
 //+------------------------------------------------------------------+
-//| 评估入场信号并立即执行（如果满足条件）                            |
-//| 在新 K 线首 tick 时调用，评估刚收盘的 K 线（Time[1]）             |
+//| 在新 K 线首 tick 评估并缓存 Signal_K 信号                          |
 //+------------------------------------------------------------------+
-void EvaluateAndExecuteSignal() {
-    // 检查参数有效期
-    if(!IsParameterValid()) {
-        LogWarn("EA", "参数无效或已过期，切换到 Safe Mode");
-        g_CurrentState = STATE_SAFE_MODE;
-        return;
+bool CacheSignalSnapshot(ParameterPack &params)
+{
+    if(g_PendingSignal) {
+        LogWarn("EA", "检测到未消费的旧缓存信号，先清理后重新评估");
+        ClearPendingSignalCache("覆盖旧缓存");
     }
     
-    // 回测模式可选日期窗口过滤：仅限制开仓评估，不影响持仓管理
-    datetime signal_bar_time = Time[1];
-    if(!IsWithinBacktestDateRange(signal_bar_time)) {
-        LogDebug("EA", "信号 K 线不在回测日期窗口内，跳过开仓评估: " + TimeToString(signal_bar_time));
-        return;
+    SignalResult evaluated_signal = EvaluateEntrySignal(params);
+    
+    if(!evaluated_signal.is_valid) {
+        LogInfo("EA", "信号评估: 拒绝 - " + evaluated_signal.reject_reason);
+        return false;
     }
     
-    // 获取当前参数
-    ParameterPack params = GetCurrentParameters();
+    CopySignalResult(evaluated_signal, g_CachedSignal);
+    g_PendingSignal = true;
+    g_CachedSignalCreatedAt = TimeCurrent();
     
-    // 评估信号
-    SignalResult signal = EvaluateEntrySignal(params);
+    LogInfo("EA", "Signal_K 信号已缓存");
+    LogDebug("EA", StringFormat("缓存数据: signal_time=%s, entry(close)=%.5f, sl=%.5f, pattern=%s",
+            TimeToString(g_CachedSignal.signal_time),
+            g_CachedSignal.entry_price,
+            g_CachedSignal.stop_loss,
+            PatternTypeToString(g_CachedSignal.pattern)));
     
-    // 如果信号无效，记录并返回
-    if(!signal.is_valid) {
-        LogInfo("EA", "信号评估: 拒绝 - " + signal.reject_reason);
-        return;
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| 仅使用缓存信号执行开仓（不得重新评估 Signal_K）                    |
+//+------------------------------------------------------------------+
+bool ExecutePendingSignal(ParameterPack &params)
+{
+    if(!g_PendingSignal) {
+        return false;
     }
     
-    // 信号有效，立即执行开仓
-    LogInfo("EA", "检测到有效信号，立即执行开仓");
-    LogDebug("EA", StringFormat("信号数据: entry=%.5f, sl=%.5f, signal_time=%s", 
-            signal.entry_price, signal.stop_loss, TimeToString(signal.signal_time)));
+    SignalResult signal;
+    CopySignalResult(g_CachedSignal, signal);
+    
+    LogInfo("EA", "使用缓存信号执行开仓（不重新评估 Signal_K）");
+    LogDebug("EA", StringFormat("执行缓存: signal_time=%s, cached_at=%s, entry(close)=%.5f, sl=%.5f",
+            TimeToString(signal.signal_time),
+            TimeToString(g_CachedSignalCreatedAt),
+            signal.entry_price,
+            signal.stop_loss));
     
     // 检查风控条件
     if(!CanOpenNewPosition(params.risk_daily_max_loss, 
                           params.risk_consecutive_loss_limit, 
                           params.max_spread_points)) {
         LogWarn("EA", "风控检查失败，取消开仓");
-        return;
+        ClearPendingSignalCache("风控拒绝");
+        return false;
     }
     
     // 检查时间过滤
     if(IsInNewsBlackout(params.news_blackouts, params.blackout_count)) {
         LogWarn("EA", "当前在新闻窗口内，取消开仓");
-        return;
+        ClearPendingSignalCache("新闻窗口拒绝");
+        return false;
     }
     
     if(!IsInTradingSession(params.session_filter)) {
         LogWarn("EA", "当前不在交易时段内，取消开仓");
-        return;
+        ClearPendingSignalCache("时段过滤拒绝");
+        return false;
     }
     
-    // 计算开仓手数
-    double total_lots = CalculatePositionSize(signal.entry_price, signal.stop_loss, params.risk_per_trade);
+    if(signal.tp_count <= 0 || signal.tp_count > 10) {
+        LogError("EA", "缓存信号 tp_count 无效，取消开仓");
+        ClearPendingSignalCache("缓存数据异常");
+        return false;
+    }
     
+    // 使用缓存 entry_price/stop_loss 计算仓位
+    double total_lots = CalculatePositionSize(signal.entry_price, signal.stop_loss, params.risk_per_trade);
     if(total_lots <= 0) {
         LogError("EA", "计算手数失败或手数为 0，取消开仓");
-        return;
+        ClearPendingSignalCache("仓位计算失败");
+        return false;
     }
     
     LogInfo("EA", StringFormat("计算总手数: %.2f", total_lots));
     
-    // 拆分手数（使用信号中的 TP 数据）
+    // 拆分手数（使用缓存信号中的 TP 数据）
     LotSplit splits[];
     int tp_count = signal.tp_count;
-    
     if(!SplitLots(total_lots, signal.tp_ratios, signal.tp_levels, tp_count, splits)) {
         LogError("EA", "拆单失败，取消开仓");
-        return;
+        ClearPendingSignalCache("拆单失败");
+        return false;
     }
     
-    // 检查 Dry Run 模式
+    // Dry Run：仅记录，不下单
     if(DryRun) {
-        // Dry Run 模式：只记录日志，不执行真实订单
         LogInfo("EA", "========== DRY RUN 模式 ==========");
-        LogInfo("EA", StringFormat("模拟开仓: 品种=%s, 入场=%.5f, 止损=%.5f, 总手数=%.2f",
+        LogInfo("EA", StringFormat("模拟开仓: 品种=%s, 缓存入场(close)=%.5f, 止损=%.5f, 总手数=%.2f",
                 Symbol(), signal.entry_price, signal.stop_loss, total_lots));
         
         for(int i = 0; i < tp_count; i++) {
@@ -529,10 +734,11 @@ void EvaluateAndExecuteSignal() {
         }
         
         LogInfo("EA", "========== DRY RUN 模式结束 ==========");
-        return;
+        ClearPendingSignalCache("DryRun 已消费");
+        return true;
     }
     
-    // 执行真实开仓
+    // 执行真实开仓（OrderSend 实际成交价由经纪商当前报价决定）
     int tickets[];
     ArrayResize(tickets, tp_count);
     
@@ -558,6 +764,38 @@ void EvaluateAndExecuteSignal() {
     } else {
         LogError("EA", "所有订单开仓失败");
     }
+    
+    ClearPendingSignalCache("执行完成");
+    return (success_count > 0);
+}
+
+//+------------------------------------------------------------------+
+//| 新 K 首 tick：评估并缓存 Signal_K，然后消费缓存执行                |
+//+------------------------------------------------------------------+
+void EvaluateAndExecuteSignal()
+{
+    // 检查参数有效期
+    if(!IsParameterValid()) {
+        LogWarn("EA", "参数无效或已过期，切换到 Safe Mode");
+        ClearPendingSignalCache("参数失效");
+        g_CurrentState = STATE_SAFE_MODE;
+        return;
+    }
+    
+    // 回测模式可选日期窗口过滤：仅限制开仓评估，不影响持仓管理
+    datetime signal_bar_time = Time[1];
+    if(!IsWithinBacktestDateRange(signal_bar_time)) {
+        LogDebug("EA", "信号 K 线不在回测日期窗口内，跳过开仓评估: " + TimeToString(signal_bar_time));
+        return;
+    }
+    
+    ParameterPack params = GetCurrentParameters();
+    
+    if(!CacheSignalSnapshot(params)) {
+        return;
+    }
+    
+    ExecutePendingSignal(params);
 }
 
 // 持仓管理（包装函数）
@@ -573,7 +811,11 @@ void TryRecoverFromSafeMode() {
     // 回测内嵌参数模式下，只允许从内嵌参数恢复，避免切换到文件参数
     if(g_IsBacktestMode && StringLen(BacktestParamJSON) > 0) {
         if(LoadEmbeddedParameters(BacktestParamJSON) && IsParameterValid()) {
-            LogInfo("EA", "内嵌参数恢复有效，退出 Safe Mode");
+            MarkParameterLoadSuccess();
+            LogInfo("EA", "Safe Mode -> RUNNING 恢复成功，原因: embedded_params_reloaded_and_valid, version=" +
+                    g_CurrentParams.version + ", source_path_mode=" + g_SourcePathMode +
+                    ", last_param_load_utc=" + GetLastParamLoadUtcText());
+            ClearPendingSignalCache("Safe Mode 恢复");
             g_CurrentState = STATE_RUNNING;
         } else {
             LogDebug("EA", "内嵌参数仍无效，保持 Safe Mode");
@@ -581,17 +823,18 @@ void TryRecoverFromSafeMode() {
         return;
     }
     
-    // 确定参数文件路径
-    string param_file_path = ParamFilePath;
-    if(StringLen(param_file_path) == 0) {
-        param_file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\signal_pack.json";
-    }
+    // 确定参数文件路径（MT4 文件沙箱）
+    string param_file_path = ResolveParameterFilePath();
     
     // 尝试重新加载参数
     if(LoadParameterPack(param_file_path)) {
         // 检查参数是否有效
         if(IsParameterValid()) {
-            LogInfo("EA", "参数已恢复有效，退出 Safe Mode");
+            MarkParameterLoadSuccess();
+            LogInfo("EA", "Safe Mode -> RUNNING 恢复成功，原因: file_params_reloaded_and_valid, version=" +
+                    g_CurrentParams.version + ", source_path_mode=" + g_SourcePathMode +
+                    ", last_param_load_utc=" + GetLastParamLoadUtcText());
+            ClearPendingSignalCache("Safe Mode 恢复");
             g_CurrentState = STATE_RUNNING;
         } else {
             LogDebug("EA", "参数仍然无效，保持 Safe Mode");
