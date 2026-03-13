@@ -1,0 +1,21 @@
+name: forex_strategy_generator
+description: "外汇策略参数生成器 — 通过AI分析生成EUR/USD H4空头策略参数包，输出JSON格式供MT4 EA使用"
+requires:
+  bins: []
+  env: []
+permissions: []
+always: false
+triggers:
+  - "生成外汇参数"
+  - "生成策略参数"
+  - "forex参数"
+  - "forex strategy"
+  - "生成signal pack"
+  - "更新交易参数"
+  - "刷新策略参数"
+tools:
+  - "write_file"
+output_format: "json"
+fallback:
+  strategy: "degrade"
+  message: "无法生成策略参数，请检查AI技能是否可用..."

@@ -54,13 +54,14 @@ V1 版本专注于 EUR/USD 空头策略，采用 H4 周期、EMA 趋势过滤、
 4. WHEN 最近 `lookback_period` 根 K 线中存在任一 K 线的最低价在 EMA50 上下 `touch_tolerance` 点范围内时，THE System SHALL 标记回踩条件满足
 5. WHEN 出现看跌吞没形态（当前 K 线实体完全包含前一 K 线实体，且当前 K 线为阴线、前一 K 线为阳线）时，THE System SHALL 标记形态确认条件满足
 6. WHEN 出现看跌 Pin Bar 形态（上影线长度 >= 实体长度的 2 倍，且下影线长度 <= 实体长度的 0.5 倍，且为阴线）时，THE System SHALL 标记形态确认条件满足
-7. WHEN 所有入场条件满足且 Signal_K 收盘后，THE System SHALL 在下一根 K 线开盘时执行开仓
-8. WHEN 开仓时，THE System SHALL 设置止损为 `max(invalid_above, Signal_K 高点 + buffer)`，其中 `buffer` 默认为 10 点
-9. WHEN 开仓时，THE System SHALL 根据 `tp_levels` 和 `tp_ratios` 拆分为多个订单
-10. WHEN 拆分订单时，THE System SHALL 确保所有订单的手数总和与计算出的总手数误差不超过一个 lot_step
-11. WHEN 拆分订单时存在舍入余量时，THE System SHALL 将余量分配到最后一个订单
-12. WHEN 拆分订单时，THE System SHALL 为每个订单设置对应的止盈价格
-13. WHEN 任一入场条件不满足时，THE System SHALL 拒绝开仓并记录原因
+7. WHEN 所有入场条件满足且 Signal_K 收盘后，THE System SHALL 在下一根 K 线首个 tick 时执行开仓
+8. WHEN 执行开仓时，THE System SHALL 使用 Signal_K 收盘时缓存的信号数据（entry_price, stop_loss, tp_levels），不得重新评估 Signal_K
+9. WHEN 开仓时，THE System SHALL 设置止损为 `max(invalid_above, Signal_K 高点 + buffer)`，其中 `buffer` 默认为 10 点
+10. WHEN 开仓时，THE System SHALL 根据 `tp_levels` 和 `tp_ratios` 拆分为多个订单
+11. WHEN 拆分订单时，THE System SHALL 确保所有订单的手数总和与计算出的总手数误差不超过一个 lot_step
+12. WHEN 拆分订单时存在舍入余量时，THE System SHALL 将余量分配到最后一个订单
+13. WHEN 拆分订单时，THE System SHALL 为每个订单设置对应的止盈价格
+14. WHEN 任一入场条件不满足时，THE System SHALL 拒绝开仓并记录原因
 
 ### 需求 3：风险管理与熔断机制
 
@@ -84,12 +85,16 @@ V1 版本专注于 EUR/USD 空头策略，采用 H4 周期、EMA 趋势过滤、
 
 #### 验收标准
 
-1. WHEN 当前时间（UTC）在 `news_blackout` 定义的任一时间窗口内时，THE System SHALL 禁止开新仓
-2. WHEN `session_filter` 启用且当前时间（UTC）不在允许的交易时段内时，THE System SHALL 禁止开新仓
-3. WHEN 多个时间窗口重叠时，THE System SHALL 正确识别并应用所有限制
-4. WHEN 事件窗口结束时，THE System SHALL 自动恢复开仓权限
-5. THE System SHALL 支持配置多个 `news_blackout` 时间窗口
-6. THE System SHALL 使用 ISO 8601 格式（带 Z 后缀）解析所有时间字段
+1. WHEN 参数包提供 `news_blackout` 字段时，THE System SHALL 解析所有时间窗口并生效
+2. WHEN 参数包提供 `session_filter` 字段时，THE System SHALL 解析时段配置并生效
+3. WHEN `news_blackout` 或 `session_filter` 解析失败时，THE System SHALL 拒绝加载参数包并进入 Safe_Mode
+4. WHEN 当前时间（UTC）在 `news_blackout` 定义的任一时间窗口内时，THE System SHALL 禁止开新仓
+5. WHEN `session_filter` 启用且当前时间（UTC）不在允许的交易时段内时，THE System SHALL 禁止开新仓
+6. WHEN 多个时间窗口重叠时，THE System SHALL 正确识别并应用所有限制
+7. WHEN 事件窗口结束时，THE System SHALL 自动恢复开仓权限
+8. THE System SHALL 支持配置多个 `news_blackout` 时间窗口
+9. THE System SHALL 使用 ISO 8601 格式（带 Z 后缀）解析所有时间字段
+10. THE System SHALL 禁止使用硬编码默认值覆盖参数包中已提供的 `news_blackout` 或 `session_filter` 配置
 
 ### 需求 5：日志与决策追踪
 
@@ -104,6 +109,8 @@ V1 版本专注于 EUR/USD 空头策略，采用 H4 周期、EMA 趋势过滤、
 5. WHEN 触发风控熔断时，THE System SHALL 记录熔断类型、触发值和恢复时间
 6. THE System SHALL 在每条日志中包含 `timestamp`, `symbol`, `rule_hit`, `param_version`, `decision` 字段
 7. THE System SHALL 支持将日志输出到文件和 MT4 日志窗口
+8. WHEN EA 停止时，THE System SHALL 在调用 CloseLogger() 之前写入所有停机日志
+9. THE System SHALL 确保停机末条日志同时出现在 MT4 日志窗口和日志文件中
 
 ### 需求 6：Dry Run 模式
 
@@ -168,6 +175,21 @@ V1 版本专注于 EUR/USD 空头策略，采用 H4 周期、EMA 趋势过滤、
 4. WHEN MT4 服务器返回错误时，THE System SHALL 记录错误并重试或放弃
 5. WHEN 遇到未预期的市场数据时，THE System SHALL 采用保守策略（如拒绝开仓）
 6. THE System SHALL 在所有异常情况下优先保护账户安全
+
+### 需求 11：参数包持续同步机制
+
+**用户故事：** 作为系统运维人员，我需要参数包在生成后自动同步到 MT4 运行目录，以便避免人工复制遗漏导致 EA 进入 Safe_Mode。
+
+#### 验收标准
+
+1. WHEN `signal_pack.json` 在源路径发生更新时，THE System SHALL 在可配置的同步周期内自动分发到 EA 运行目录（至少包含 `MQL4/Files/signal_pack.json` 与 `tester/files/signal_pack.json`）
+2. WHEN 同步服务启动时，THE System SHALL 立即执行一次全量同步，确保目标目录状态可用
+3. WHEN 同步过程中任一目标写入失败时，THE System SHALL 记录包含源路径、目标路径、错误信息的日志，并在后续周期重试
+4. WHEN 源文件内容未变化且目标文件已一致时，THE System SHALL 跳过重复复制以减少不必要 IO
+5. THE System SHALL 支持一次性同步模式和持续运行模式，满足调试与运维两类场景
+6. THE System SHALL 记录每次同步动作的 UTC 时间戳，并在可解析时附带参数包 `version`
+7. WHEN 健康检查以 `RequireCurrentValidWindow=false` 运行时，THE System SHALL 将 `valid_to` 过期判定为告警（WARNING）而非失败（FAILED），用于同步链路连续性监控而非交易可用性门禁
+8. WHEN 健康检查发现 source/live/tester 哈希不一致时，THE System SHALL 在失败详情中输出每个副本的哈希前缀，便于快速定位差异副本
 
 ## 数据契约
 

@@ -1,5 +1,11 @@
 # Forex Strategy Generator Skill
 
+## 文档状态
+
+- 定位：当前使用说明主入口
+- 适用版本：V1（默认参数回退 + Cron 触发）
+- 详细实现：见 `SKILL.md` 与 `IMPLEMENTATION_SUMMARY.md`
+
 ## 📋 目录
 
 - [概述](#概述)
@@ -14,6 +20,8 @@
 ## 概述
 
 forex_strategy_generator 是一个 Blockcell Skill，用于自动生成 EUR/USD H4 空头策略的参数包。它通过 AI 分析市场并生成完整的策略参数 JSON 文件，供 MT4 EA 使用。
+
+> 说明：当前 V1 版本未接入真实 AI 分析技能，运行时会回退为默认参数生成。
 
 ### 系统架构
 
@@ -77,7 +85,7 @@ cat ../../ea/signal_pack.json
 ./setup_cron.sh daily
 
 # 验证配置
-curl http://localhost:18790/v1/cron
+curl -H "Authorization: Bearer <token>" http://localhost:18790/v1/cron
 ```
 
 ### 3. 在 MT4 EA 中使用
@@ -115,9 +123,10 @@ forex_strategy_generator/
 ### ⚠️ V1 限制
 
 - 未集成真实的 AI 分析（forex_news/forex_analysis/forex_strategy 技能尚未实现）
+- 不支持通过 `call_skill` 直接跨 Skill 调用
 - 使用固定的默认参数值
 - news_blackout 默认为空数组
-- 时间转换使用简化算法
+- 时间计算仍为纯 Rhai 实现（已在 2026-03-10 修复闰年与月份天数问题）
 
 ### 🚀 计划中（V2）
 
@@ -143,10 +152,16 @@ forex_strategy_generator/
 blockcell run msg "生成外汇策略参数"
 ```
 
-**方法 3：使用配置脚本**
+**方法 3：通过 Gateway API 触发已存在 Cron 任务**
 ```bash
-# 使用配置脚本创建一次性 Cron 任务
-./setup_cron.sh test
+# 如果 gateway 配置了 apiToken，先设置 token
+API_TOKEN="<your_gateway_token>"
+
+# 1) 获取任务 UUID（示例：daily 任务）
+job_uuid=$(curl -s -H "Authorization: Bearer ${API_TOKEN}" http://localhost:18790/v1/cron | jq -r '.jobs[] | select(.name=="forex_param_generator_daily") | .id' | head -n1)
+
+# 2) 手动触发任务
+curl -X POST -H "Authorization: Bearer ${API_TOKEN}" "http://localhost:18790/v1/cron/${job_uuid}/run"
 
 # 注意：Gateway 不提供直接调用 Skill 的 HTTP API
 # 需要通过 CLI 或创建一次性 Cron 任务来手动触发
@@ -195,10 +210,13 @@ pwsh -NoProfile -File "domain_experts/forex/skills/forex_strategy_generator/inte
 
 ### 环境要求
 
-1. **时区配置**：Blockcell 必须运行在 UTC 时区
+1. **时区配置**：系统时区可以是 UTC+8（或其他），但 `cron_expr` 与参数包时间字段按 UTC 解释
    ```bash
+   # 可选：仅在你希望命令行时间显示为 UTC 时设置
    export TZ=UTC
    ```
+   - 例如 `0 0 6 * * *` 表示每天 `06:00Z`（北京时间 `14:00`）
+   - 实测（2026-03-11）：`lastRunAtMs=1773208800755` 对应 `2026-03-11 06:00:00Z`
 
 2. **文件权限**：确保有写入权限
    ```bash
@@ -287,17 +305,19 @@ df -h
 ```
 
 **解决方案：**
-1. 确认 Blockcell 运行在 UTC 时区
-2. 检查 TZ 环境变量
+1. 确认你使用 UTC 语义写 `cron_expr`（不是本地时间）
+2. 用运行记录核对 `lastRunAtMs/nextRunAtMs` 与 `signal_pack.version`
+3. 仅当你需要统一命令行显示时，再设置 `TZ=UTC`
 
 ```bash
 # 检查时区
 date +%Z
 
-# 设置 UTC 时区
-export TZ=UTC
+# 检查 Cron 任务时间（UTC 毫秒）
+curl -H "Authorization: Bearer <token>" http://localhost:18790/v1/cron | jq '.jobs[] | {name, schedule, state}'
 
-# 重启 Blockcell
+# 检查参数包版本与时间
+cat ../../ea/signal_pack.json | jq '{version, valid_from}'
 ```
 
 ### 问题 3：Cron 任务未执行
@@ -314,14 +334,14 @@ export TZ=UTC
 
 ```bash
 # 检查任务列表（注意：返回对象，不是数组）
-curl http://localhost:18790/v1/cron | jq '.'
+curl -H "Authorization: Bearer <token>" http://localhost:18790/v1/cron | jq '.'
 
 # 获取特定任务的 UUID（jq 必须使用 .jobs[]，不要使用 .[]）
-job_uuid=$(curl -s http://localhost:18790/v1/cron | jq -r '.jobs[] | select(.name=="forex_param_generator_daily") | .id' | head -n1)
+job_uuid=$(curl -s -H "Authorization: Bearer <token>" http://localhost:18790/v1/cron | jq -r '.jobs[] | select(.name=="forex_param_generator_daily") | .id' | head -n1)
 echo "$job_uuid"
 
 # 使用 UUID 手动触发任务
-curl -X POST "http://localhost:18790/v1/cron/${job_uuid}/run"
+curl -X POST -H "Authorization: Bearer <token>" "http://localhost:18790/v1/cron/${job_uuid}/run"
 
 # 注意：Gateway 当前未实现以下接口
 # - GET /v1/cron/<job_uuid>
@@ -344,6 +364,18 @@ tail -f /var/log/blockcell/blockcell.log
 **解决方案：**
 - V1 版本：接受默认参数，手动调整参数包
 - V2 版本：等待 AI 技能实现
+
+### 问题 5：`/v1/cron` 返回 401（Unauthorized）
+
+**症状：**
+```text
+Unauthorized: invalid or missing Bearer token
+```
+
+**解决方案：**
+1. 优先检查当前运行实例读取的是哪份配置（常见是 `~/.blockcell/config.json5`，不是 `config.json`）
+2. 使用 `Authorization: Bearer <token>`（`X-API-Key` 对 Gateway API 不生效）
+3. 如需快速验证，也可用 `?token=<token>` 方式调用
 
 更多故障排查信息，请参考：
 - [SKILL.md - 故障排查](SKILL.md#故障排查)
@@ -392,8 +424,7 @@ tail -f /var/log/blockcell/blockcell.log
 ## 贡献
 
 欢迎贡献代码和建议！请参考：
-- [Blockcell 贡献指南](../../../../CONTRIBUTING.md)
-- [开发规则](../../../../AGENTS.md)
+- [仓库协作规则](../../../../AGENTS.md)
 
 ## 许可证
 
@@ -408,6 +439,6 @@ tail -f /var/log/blockcell/blockcell.log
 
 ---
 
-**最后更新：** 2025-03-10  
+**最后更新：** 2026-03-12  
 **版本：** V1.0  
 **状态：** ✅ 已完成

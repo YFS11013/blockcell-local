@@ -1,0 +1,104 @@
+# Forex Strategy Generator - Cron 配置示例
+# 
+# 使用方法：
+# 1. 根据实际需求修改此文件
+# 2. 将配置应用到 Blockcell Cron 系统
+# 3. 验证任务是否正确创建
+
+# 主任务：每天 UTC 06:00 生成参数包
+forex_param_generator_daily:
+  schedule: "0 0 6 * * *"  # 6段格式：秒 分 时 日 月 周
+  action:
+    type: skill
+    skill_name: forex_strategy_generator
+    params: {}
+  enabled: true
+  description: "每天UTC 06:00生成外汇策略参数包（亚洲早盘前）"
+  timezone: UTC
+  retry:
+    max_attempts: 3
+    interval_seconds: 300  # 失败后5分钟重试
+  notifications:
+    on_success: false
+    on_failure: true
+    channels:
+      - email
+      - slack
+
+# 备用任务：每天 UTC 18:00 生成参数包（可选）
+forex_param_generator_evening:
+  schedule: "0 0 18 * * *"  # 6段格式：秒 分 时 日 月 周
+  action:
+    type: skill
+    skill_name: forex_strategy_generator
+    params: {}
+  enabled: false  # 默认禁用，需要时启用
+  description: "每天UTC 18:00生成外汇策略参数包（欧洲收盘后）"
+  timezone: UTC
+  retry:
+    max_attempts: 3
+    interval_seconds: 300
+
+# 测试任务：每小时执行一次（仅用于测试）
+forex_param_generator_hourly_test:
+  schedule: "0 0 * * * *"  # 6段格式：秒 分 时 日 月 周
+  action:
+    type: skill
+    skill_name: forex_strategy_generator
+    params: {}
+  enabled: false  # 默认禁用，仅测试时启用
+  description: "每小时生成参数包（测试用）"
+  timezone: UTC
+
+# 周末任务：周一早上生成参数包
+forex_param_generator_monday:
+  schedule: "0 0 6 * * 1"  # 6段格式：秒 分 时 日 月 周（周一）
+  action:
+    type: skill
+    skill_name: forex_strategy_generator
+    params: {}
+  enabled: false  # 默认禁用，可根据需要启用
+  description: "每周一UTC 06:00生成参数包（周末后首次）"
+  timezone: UTC
+
+# 重大事件前任务：手动触发
+forex_param_generator_manual:
+  schedule: null  # 无定时，仅手动触发
+  action:
+    type: skill
+    skill_name: forex_strategy_generator
+    params: {}
+  enabled: true
+  description: "手动触发生成参数包（用于重大事件前更新）"
+  timezone: UTC
+
+# 配置说明：
+# 
+# schedule: Cron 表达式（6段格式：秒 分 时 日 月 周）
+#   - "0 0 6 * * *"     每天 06:00
+#   - "0 0 */4 * * *"   每4小时
+#   - "0 0 6,18 * * *"  每天 06:00 和 18:00
+#   - "0 0 6 * * 1-5"   周一到周五 06:00
+#   - null              仅手动触发
+#
+# action.type: 任务类型
+#   - skill: 调用 Skill
+#   - command: 执行命令
+#   - api: 调用 API
+#
+# enabled: 是否启用任务
+#   - true: 启用
+#   - false: 禁用
+#
+# timezone: 时区（重要！）
+#   - UTC: 推荐使用 UTC
+#   - 其他时区需要确保与 Blockcell 运行环境一致
+#
+# retry: 重试配置
+#   - max_attempts: 最大重试次数
+#   - interval_seconds: 重试间隔（秒）
+#
+# notifications: 通知配置
+#   - on_success: 成功时通知
+#   - on_failure: 失败时通知
+#   - channels: 通知渠道（email, slack, telegram等）

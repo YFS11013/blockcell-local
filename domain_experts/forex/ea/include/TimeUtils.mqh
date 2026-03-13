@@ -5,11 +5,85 @@
 //| 描述：时间处理工具模块                                            |
 //| 功能：                                                            |
 //|   - UTC 时间转换                                                 |
+//|   - UTC 偏移自动探测与手工回退                                   |
 //|   - ISO 8601 时间解析                                            |
 //|   - 时间格式化                                                   |
 //+------------------------------------------------------------------+
 #property copyright "MT4 Forex Strategy Executor"
 #property strict
+
+#ifndef TIME_UTILS_MQH
+#define TIME_UTILS_MQH
+
+//+------------------------------------------------------------------+
+//| 获取手工配置的 UTC 偏移（秒）                                     |
+//+------------------------------------------------------------------+
+int GetManualUTCOffsetSeconds()
+{
+    return ServerUTCOffset * 3600;
+}
+
+//+------------------------------------------------------------------+
+//| 格式化 UTC 偏移（秒）为 UTC+HH:MM / UTC-HH:MM                    |
+//+------------------------------------------------------------------+
+string FormatUTCOffsetSeconds(int offset_seconds)
+{
+    int abs_seconds = (int)MathAbs((double)offset_seconds);
+    int hours = abs_seconds / 3600;
+    int minutes = (abs_seconds % 3600) / 60;
+    string sign = (offset_seconds >= 0) ? "+" : "-";
+    
+    return StringFormat("UTC%s%02d:%02d", sign, hours, minutes);
+}
+
+//+------------------------------------------------------------------+
+//| 自动探测服务器 UTC 偏移（秒）                                     |
+//| 返回：                                                            |
+//|   true  - 探测成功                                                |
+//|   false - 探测失败                                                |
+//+------------------------------------------------------------------+
+bool TryDetectServerUTCOffsetSeconds(int &offset_seconds)
+{
+    datetime server_now = TimeCurrent();
+    datetime gmt_now = TimeGMT();
+    
+    if(server_now <= 0 || gmt_now <= 0) {
+        return false;
+    }
+    
+    int raw_seconds = (int)(server_now - gmt_now);
+    
+    // 兼容秒级抖动：按分钟四舍五入
+    int rounded_seconds = (raw_seconds >= 0)
+        ? ((raw_seconds + 30) / 60) * 60
+        : ((raw_seconds - 30) / 60) * 60;
+    
+    // 合理范围：[-14h, +14h]
+    if(rounded_seconds < -14 * 3600 || rounded_seconds > 14 * 3600) {
+        return false;
+    }
+    
+    offset_seconds = rounded_seconds;
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| 获取生效的 UTC 偏移（秒）                                         |
+//| 逻辑：                                                            |
+//|   1. AutoDetectUTCOffset=true 且自动探测成功 -> 使用自动探测值    |
+//|   2. 其他情况 -> 回退手工 ServerUTCOffset                         |
+//+------------------------------------------------------------------+
+int GetEffectiveUTCOffsetSeconds()
+{
+    if(AutoDetectUTCOffset) {
+        int detected_seconds = 0;
+        if(TryDetectServerUTCOffsetSeconds(detected_seconds)) {
+            return detected_seconds;
+        }
+    }
+    
+    return GetManualUTCOffsetSeconds();
+}
 
 //+------------------------------------------------------------------+
 //| 将 MT4 服务器时间转换为 UTC 时间                                  |
@@ -18,13 +92,13 @@
 //| 返回：                                                            |
 //|   UTC 时间                                                       |
 //| 说明：                                                            |
-//|   使用全局输入参数 ServerUTCOffset 进行转换                       |
-//|   转换公式：utc_time = server_time - ServerUTCOffset * 3600      |
+//|   默认自动探测服务器偏移，失败回退到 ServerUTCOffset             |
+//|   转换公式：utc_time = server_time - effective_offset_seconds     |
 //+------------------------------------------------------------------+
 datetime ConvertToUTC(datetime server_time)
 {
     // 转换为 UTC
-    datetime utc_time = server_time - ServerUTCOffset * 3600;
+    datetime utc_time = server_time - GetEffectiveUTCOffsetSeconds();
     
     return utc_time;
 }
@@ -175,3 +249,5 @@ void TestTimeUtils()
 }
 
 //+------------------------------------------------------------------+
+
+#endif // TIME_UTILS_MQH

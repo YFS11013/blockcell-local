@@ -178,6 +178,46 @@ struct SessionFilter {
 - tp_levels 和 tp_ratios 长度相同
 - abs(sum(tp_ratios) - 1.0) <= 1e-6
 - 时间格式为 ISO 8601（YYYY-MM-DDTHH:MM:SSZ）
+- 可选字段（news_blackout, session_filter）如果提供则必须正确解析
+
+**可选字段解析策略**（修复 news_blackout/session_filter 解析问题）：
+```mql4
+// 解析 news_blackout 数组
+bool ParseNewsBlackout(string json, ParameterPack &params) {
+    // 字段不存在时返回 true（可选字段）
+    if(StringFind(json, "\"news_blackout\"") < 0) {
+        params.blackout_count = 0;
+        return true;
+    }
+    
+    // 字段存在但解析失败时返回 false
+    // 解析所有时间窗口对象...
+    // 校验 start/end 时间格式...
+    
+    return true;  // 解析成功
+}
+
+// 解析 session_filter 对象
+bool ParseSessionFilter(string json, ParameterPack &params) {
+    // 字段不存在时返回 true（可选字段）
+    if(StringFind(json, "\"session_filter\"") < 0) {
+        params.session_filter.enabled = false;
+        return true;
+    }
+    
+    // 字段存在但解析失败时返回 false
+    // 解析 enabled 和 allowed_hours_utc...
+    // 校验小时范围 [0, 23]...
+    
+    return true;  // 解析成功
+}
+```
+
+**关键要点**：
+- 可选字段不存在时：初始化为默认值（blackout_count=0, enabled=false），返回 true
+- 可选字段存在但格式错误时：设置 error_message，返回 false，拒绝加载参数包
+- 禁止使用硬编码默认值覆盖已提供的配置
+- 解析失败时进入 Safe_Mode（符合需求 4.3）
 
 
 ### 2. Strategy Engine（策略引擎）
@@ -292,8 +332,40 @@ enum PatternType {
 **信号评估时机**：
 - 在每根 H4 K 线收盘时（OnTick 中检测 K 线变化）
 - 评估时使用已收盘的 K 线数据（[1], [2], ...）
-- 如果所有条件满足，标记为"待开仓"
-- 在下一根 K 线开盘时（检测到新 K 线）执行开仓
+- 如果所有条件满足，生成完整的信号快照并缓存到全局变量 `g_CachedSignal`
+- 在下一根 K 线首个 tick 时（检测到新 K 线）执行开仓
+
+**信号缓存机制**（修复 Signal_K 执行时序问题）：
+```mql4
+// 全局变量
+bool g_PendingSignal = false;
+SignalResult g_CachedSignal;  // 缓存的信号快照
+
+// 在 K 线收盘时评估并缓存信号
+void EvaluateEntrySignal() {
+    SignalResult signal = EvaluateEntrySignal(params);
+    
+    if(signal.is_valid) {
+        g_CachedSignal = signal;  // 缓存完整的信号快照
+        g_PendingSignal = true;
+        // 信号包含：entry_price, stop_loss, tp_levels, tp_ratios, signal_time
+    }
+}
+
+// 在下一根 K 线首个 tick 时执行
+void ExecutePendingSignal() {
+    // 直接使用缓存的信号，不再重新评估
+    SignalResult signal = g_CachedSignal;
+    
+    // 执行开仓逻辑...
+}
+```
+
+**关键要点**：
+- Signal_K 是触发信号的那根 K 线（已收盘的 [1]）
+- 信号数据必须在 Signal_K 收盘时完整缓存
+- 执行阶段不得重新评估 Signal_K，必须使用缓存的数据
+- 这确保了"Signal_K 收盘后下一根 K 线首个 tick 执行"的语义正确
 
 
 ### 3. Risk Manager（风险管理器）
@@ -610,7 +682,32 @@ void LogOrderClose(int ticket, double profit);
 
 熔断：
 [2025-03-09T16:00:00Z] [ERROR] [RiskMgr] Circuit breaker triggered: daily loss -2.1% >= -2.0%, trading suspended until 2025-03-09T23:59:59Z
+
+停机日志：
+[2025-03-09T18:00:00Z] [INFO] [EA] EA 已停止
 ```
+
+**日志关闭顺序**（修复 OnDeinit 日志顺序问题）：
+```mql4
+void OnDeinit(const int reason) {
+    // 1. 保存状态
+    SaveEAState();
+    
+    // 2. 清理资源
+    CleanupResources();
+    
+    // 3. 写入停机末条日志
+    LogInfo("EA", "EA 已停止");
+    
+    // 4. 最后关闭日志系统
+    CloseLogger();
+}
+```
+
+**关键要点**：
+- 所有日志必须在 CloseLogger() 之前写入
+- 停机末条日志必须同时出现在 MT4 日志窗口和日志文件中
+- 确保日志完整性，避免日志丢失
 
 
 ### 7. Time Filter（时间过滤器）

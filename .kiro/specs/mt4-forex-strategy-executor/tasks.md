@@ -437,29 +437,100 @@
     - 配置 MT4 Strategy Tester
     - _需求：9.1, 9.2_
 
-  - [ ] 14.4 实现回测参数注入机制
+  - [x] 14.4 实现回测参数注入机制
     - 实现外部参数注入方式（通过 EA 输入参数）
     - 实现内嵌参数注入方式（硬编码到 EA）
     - 验证两种方式都能正常工作
+    - 证据（运行脚本）：[run_mt4_task14_backtest.ps1](../../../domain_experts/forex/ea/scripts/run_mt4_task14_backtest.ps1)
+    - 证据（文件模式日志摘录）：[file_mode_log_excerpt.txt](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/file_mode_log_excerpt.txt)
+    - 证据（内嵌模式日志摘录）：[embedded_mode_log_excerpt.txt](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/embedded_mode_log_excerpt.txt)
     - _需求：9.5_
 
-  - [ ] 14.5 验证回测与实盘逻辑一致性
+  - [x] 14.5 验证回测与实盘逻辑一致性
     - 对比回测和实盘的决策路径
     - 确保使用相同的策略逻辑
     - 验证历史 K 线数据处理正确
+    - 状态说明：在线实盘窗口（2026-03-11 22:25:34 ~ 22:30:34，本地时区）已通过 `passed_startup_and_tick_update_path`；同参数、同 EA 条件下，回测与实盘在参数加载 + 状态机启动 + OnTick 参数更新链路一致（`live_ea_lines_count=209`，`live_tick_update_lines_count=1`）
+    - 证据（脚本）：[run_mt4_task14_live_consistency.ps1](../../../domain_experts/forex/ea/scripts/run_mt4_task14_live_consistency.ps1)
+    - 证据（一致性报告）：[CONSISTENCY_REPORT.md](../../../domain_experts/forex/ea/backtest_artifacts/task14_consistency_20260311_222534/CONSISTENCY_REPORT.md)
+    - 证据（摘要）：[summary.json](../../../domain_experts/forex/ea/backtest_artifacts/task14_consistency_20260311_222534/summary.json)
+    - 证据（实盘 EA 日志摘录）：[live_mode_log_excerpt.txt](../../../domain_experts/forex/ea/backtest_artifacts/task14_consistency_20260311_222534/live_mode_log_excerpt.txt)
+    - 证据（终端连接日志摘录）：[runner_log_excerpt.txt](../../../domain_experts/forex/ea/backtest_artifacts/task14_consistency_20260311_222534/runner_log_excerpt.txt)
     - _需求：9.2, 9.3, 9.6_
 
-  - [ ] 14.6 执行回测
+  - [x] 14.6 执行回测
     - 运行回测
     - 生成回测报告
     - 验证无崩溃或异常下单
+    - 证据（汇总）：[summary.json](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/summary.json)
+    - 证据（文件模式报告）：[report_file_mode.htm](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/report_file_mode.htm)
+    - 证据（内嵌模式报告）：[report_embedded_mode.htm](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/report_embedded_mode.htm)
+    - 证据（回测报告文档）：[BACKTEST_REPORT.md](../../../domain_experts/forex/ea/docs/BACKTEST_REPORT.md)
     - _需求：9.4, 9.7_
     - _交付物：回测报告_
 
-- [ ] 15. Final Checkpoint - 验收
-  - 验证所有验收标准
-  - 确认所有交付物完成
-  - 询问用户是否满意
+- [x] 15. Final Checkpoint - 验收（2026-03-11）
+  - [x] 验证所有验收标准（需求 1-10）
+  - [x] 确认所有交付物完成
+  - [x] 产出最终验收记录
+    - 证据（最终验收记录）：[final_acceptance_2026-03-11.md](./final_acceptance_2026-03-11.md)
+    - 证据（在线严格验收）：[ONLINE_STRICT_ACCEPTANCE_2026-03-10.md](../../../domain_experts/forex/skills/forex_strategy_generator/ONLINE_STRICT_ACCEPTANCE_2026-03-10.md)
+    - 证据（回测汇总）：[summary.json](../../../domain_experts/forex/ea/backtest_artifacts/task14_20260311_090410/summary.json)
+    - 证据（一致性汇总）：[summary.json](../../../domain_experts/forex/ea/backtest_artifacts/task14_consistency_20260311_222534/summary.json)
+  - [x] 询问用户是否满意（待用户反馈）
+
+- [x] 16. 参数包持续同步机制落地（2026-03-12）
+  - [x] 16.1 增加持续同步脚本
+    - 新增 `sync_signal_pack_continuous.ps1`，支持启动即全量同步 + 轮询增量同步
+    - 自动同步到 `.mt4_portable_runner/MQL4/Files/signal_pack.json` 与 `.mt4_portable_runner/tester/files/signal_pack.json`
+    - _需求：11.1, 11.2, 11.5_
+    - _设计：部署流程 - 文件同步（design.md 1307-1311）_
+
+  - [x] 16.2 增加失败重试与同步日志
+    - 写入失败时记录源/目标/错误并自动重试
+    - 日志记录 UTC 时间戳与参数包 version（可解析时）
+    - _需求：11.3, 11.6_
+    - _设计：运维监控与告警_
+
+  - [x] 16.3 补充运维使用文档
+    - 在 `domain_experts/forex/ea/scripts/Readme.md` 增加持续同步脚本启动、一次性执行和自定义参数示例
+    - _需求：11.5_
+    - _设计：部署流程 - 文件同步_
+
+  - [x] 16.4 增加任务计划注册脚本
+    - 新增 `register_signal_pack_sync_task.ps1`，支持 Install/Status/RunNow/Remove/Stop
+    - 支持登录后自动启动持续同步服务，并可附带 `-StartNow` 立即触发
+    - _需求：11.1, 11.2, 11.5_
+    - _设计：部署流程 - 文件同步_
+
+  - [x] 16.5 同步服务稳定性增强
+    - `sync_signal_pack_continuous.ps1` 增加单实例锁，避免重复启动导致并发写入
+    - `register_signal_pack_sync_task.ps1` 增加 `Stop` 动作并修复 `Status` 权限误判
+    - _需求：11.3, 11.4, 11.5_
+    - _设计：部署流程 - 文件同步_
+
+  - [x] 16.6 同步健康检查脚本
+    - 新增 `verify_signal_sync.ps1`，校验 source/live/tester 的 hash/version/mtime 一致性
+    - 支持 `-RequireCurrentValidWindow` 与 `-MaxAgeMinutes`，异常返回非 0（`exit 2`）
+    - 明确 `RequireCurrentValidWindow=false` 为“连续性监控模式”：过期仅 WARNING，不作为 FAILED
+    - 哈希不一致时输出各副本哈希前缀（source/live/tester）用于快速定位
+    - 在 `scripts/Readme.md` 补充监控场景命令示例
+    - _需求：11.1, 11.3, 11.6, 11.7, 11.8_
+    - _设计：运维监控与告警_
+
+  - [x] 16.7 健康检查任务化
+    - 新增 `run_signal_sync_health_check.ps1`，统一输出 `signal_sync_health.log` 与 `signal_sync_alert.log`
+    - 新增 `register_signal_sync_health_task.ps1`，支持 Install/Status/RunNow/Remove
+    - 默认每 5 分钟检查一次，可用于本机 Task Scheduler 运维告警
+    - _需求：11.1, 11.3, 11.6_
+    - _设计：运维监控与告警_
+
+  - [x] 16.8 健康日志轮转
+    - `run_signal_sync_health_check.ps1` 增加按大小轮转（`MaxLogSizeKB`）和备份保留（`MaxLogBackups`）
+    - 轮转同时作用于 `signal_sync_health.log` 与 `signal_sync_alert.log`
+    - `register_signal_sync_health_task.ps1` 透传轮转参数并在安装输出中展示
+    - _需求：11.3, 11.6_
+    - _设计：运维监控与告警_
 
 ## 注意事项
 

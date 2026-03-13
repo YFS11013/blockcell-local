@@ -12,6 +12,9 @@
 #property copyright "MT4 Forex Strategy Executor"
 #property strict
 
+#ifndef STRATEGY_ENGINE_MQH
+#define STRATEGY_ENGINE_MQH
+
 //+------------------------------------------------------------------+
 //| 数据结构定义                                                      |
 //+------------------------------------------------------------------+
@@ -294,7 +297,7 @@ SignalResult EvaluateEntrySignal(ParameterPack &params)
     
     // 所有条件满足，生成有效信号
     signal.is_valid = true;
-    signal.entry_price = Bid;  // 做空使用 Bid 价
+    signal.entry_price = Close[1];  // 使用 Signal_K 收盘价作为缓存入场价
     
     // 计算止损
     double signal_high = High[1];  // Signal_K 的高点
@@ -308,7 +311,7 @@ SignalResult EvaluateEntrySignal(ParameterPack &params)
     }
     
     Print("========== 信号评估结束: 有效信号 ==========");
-    Print("入场价格: ", DoubleToString(signal.entry_price, 5));
+    Print("入场价格(缓存): ", DoubleToString(signal.entry_price, 5));
     Print("止损价格: ", DoubleToString(signal.stop_loss, 5));
     Print("形态类型: ", PatternTypeToString(signal.pattern));
     
@@ -329,3 +332,5 @@ string PatternTypeToString(PatternType pattern)
 }
 
 //+------------------------------------------------------------------+
+
+#endif // STRATEGY_ENGINE_MQH

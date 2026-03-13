@@ -4,3 +4,8 @@
 /.worktrees/
 CLAUDE.md
 .claude/
+
+# MT4 runner artifacts
+/domain_experts/forex/ea/.mt4_portable_runner/
+/domain_experts/forex/ea/.mt4_portable_runner_locktest/
+/domain_experts/forex/ea/backtest_artifacts/
