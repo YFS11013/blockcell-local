@@ -25,13 +25,24 @@ ForexStrategyExecutor 是一个 MT4 自动交易程序（EA），用于执行 EU
 - 价格区间过滤
 - EMA 回踩检测
 - 形态识别（看跌吞没、看跌 Pin Bar）
+- Signal_K 缓存执行（执行阶段不重新评估）
 - 风险管理（单笔风险、日亏损熔断、连续亏损熔断）
 - 时间过滤（新闻窗口、交易时段）
+- UTC 偏移自动探测（失败回退手工偏移）
 - 完整日志记录
+- 图表状态面板（版本号/状态/参数版本/last_param_load_utc/source_path_mode/UTC/缓存）
 
 ---
 
 ## 部署步骤
+
+### 自动化执行边界（Runner-Only）
+
+Task14 回测与一致性自动化脚本统一在 `domain_experts/forex/ea/.mt4_portable_runner` 内执行：
+
+1. 脚本只把仓库 EA 源码同步到 runner，不再依赖 `AppData\Roaming\MetaQuotes\Terminal\...`。
+2. 编译动作在 runner 内进行（`metaeditor.exe /portable`）。
+3. 回测与日志采样产物仅写入 runner 与 `backtest_artifacts`。
 
 ### 步骤 1：编译 EA
 
@@ -39,6 +50,15 @@ ForexStrategyExecutor 是一个 MT4 自动交易程序（EA），用于执行 EU
 2. 打开 `ForexStrategyExecutor.mq4` 文件
 3. 点击「编译」按钮（或按 F7）
 4. 确保编译成功，无错误和警告
+
+可选：使用 portable runner 命令行编译
+
+```powershell
+$meta="domain_experts/forex/ea/.mt4_portable_runner/metaeditor.exe"
+$src="domain_experts/forex/ea/.mt4_portable_runner/MQL4/Experts/ForexStrategyExecutor.mq4"
+$log="domain_experts/forex/ea/backtest_artifacts/compile_forex_executor_local.log"
+Start-Process -FilePath $meta -ArgumentList @("/portable","/compile:$src","/log:$log") -Wait
+```
 
 ### 步骤 2：安装 EA 文件
 
@@ -110,6 +130,7 @@ MT4/MQL4/Experts/ForexStrategyExecutor.ex4
 | `DryRun` | bool | false | Dry Run 模式（不下真实订单） |
 | `LogLevel` | string | "INFO" | 日志级别：DEBUG, INFO, WARN, ERROR |
 | `ParamCheckInterval` | int | 300 | 参数检查间隔（秒） |
+| `AutoDetectUTCOffset` | bool | true | 自动探测服务器 UTC 偏移，失败时回退到 `ServerUTCOffset` |
 | `ServerUTCOffset` | int | 2 | 服务器时区偏移（小时） |
 
 ### 回测专用参数
@@ -119,6 +140,14 @@ MT4/MQL4/Experts/ForexStrategyExecutor.ex4
 | `BacktestParamJSON` | string | 空 | 回测模式：内嵌参数 JSON（非空时优先，且跳过文件热更新） |
 | `BacktestStartDate` | datetime | 0 | 回测开仓评估起始时间（0=不限制） |
 | `BacktestEndDate` | datetime | 0 | 回测开仓评估结束时间（0=不限制） |
+
+### 执行与时间语义（V1.1+）
+
+1. `Signal_K` 在新 K 线首 tick 评估，并缓存信号快照。
+2. 开仓执行阶段只使用缓存快照（`entry_price/stop_loss/tp*`），不得重新评估。
+3. `entry_price` 使用 `Signal_K` 收盘价（`Close[1]`）缓存值。
+4. UTC 使用自动探测偏移；自动探测失败时回退 `ServerUTCOffset`。
+5. 图表右上角状态面板会显示版本号、`param_version`、`last_param_load_utc`、`source_path_mode` 与 UTC/缓存状态。
 
 ### 日志级别说明
 
@@ -248,6 +277,20 @@ python domain_experts/forex/ea/scripts/generate_historical_signal_packs.py --sta
 2. 检查系统时间
 3. 验证 UTC 时间转换
 
+#### 问题 3.1：UTC 时间看起来不对
+
+**可能原因**：
+- `AutoDetectUTCOffset=false` 且 `ServerUTCOffset` 配置错误
+- 自动探测失败后回退到了不正确的手工偏移
+
+**解决方案**：
+1. 优先保持 `AutoDetectUTCOffset=true`
+2. 在 EA 初始化日志中检查：
+   - 手工偏移
+   - 自动探测偏移
+   - 生效偏移（AUTO/MANUAL_FALLBACK）
+3. 若必须手工模式，校准 `ServerUTCOffset` 后重启 EA
+
 #### 问题 4：回测无交易
 
 **可能原因**：
@@ -312,6 +355,14 @@ python domain_experts/forex/ea/scripts/generate_historical_signal_packs.py --sta
 | 开仓频率 | 视策略而定 | 连续 7 天无开仓 |
 | 盈亏 | - | 单日亏损 > 2% |
 | 熔断 | - | 连续触发 |
+
+### 同步健康检查语义（脚本）
+
+当使用 `verify_signal_sync.ps1` / `run_signal_sync_health_check.ps1` 监控参数包同步链路时：
+
+1. `RequireCurrentValidWindow=true`：`valid_from/valid_to` 违规按失败处理（`RESULT=FAILED`），用于交易可用性门禁。
+2. `RequireCurrentValidWindow=false`：参数过期仅记录 WARNING，不单独触发 FAILED，用于“文件分发连续性”监控。
+3. `hash` 不一致失败会输出 `source/live/tester` 各自哈希前缀，便于快速定位哪个副本偏离。
 
 ### 定期维护
 
