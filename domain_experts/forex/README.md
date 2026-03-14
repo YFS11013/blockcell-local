@@ -15,6 +15,8 @@
 - `ea/docs/DataService_EA_status.md`：DataService_EA 旧版现状与字段差异记录
 - `ea/docs/MT4_BLOCKCELL_INNOVATION.md`：**MT4 + EA 作为 blockcell 工具/技能的创新用法（非交易）— V2**
 - `ea/protocol/PROTOCOL.md`：**MT4 Worker 文件协议规范（job/result/heartbeat/error schema）**
+- `ea/scripts/run_ea_test.ps1`：**P4 通用 EA 测试 runner（headless，解析 AUTO_TEST_SUMMARY）**
+- `ea/include/EaTestBase.mqh`：**P4 测试基础库（AssertExplore / AssertPreserve / RunAllTests）**
 
 ### Blockcell Skill 侧
 
