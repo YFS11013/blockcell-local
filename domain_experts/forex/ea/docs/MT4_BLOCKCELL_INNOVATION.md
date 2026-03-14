@@ -103,19 +103,22 @@ blockcell 写 feature_job.json（品种列表 + 特征列表 + as_of_date）
 
 ---
 
-## 方向四：headless 测试基础设施（P4 — 已有，持续完善）
+## 方向四：headless 测试基础设施（P4 — 已完成）
 
-**已有基础**：`run_mt4_magic_number_tests.ps1` 模式
+**已有基础**：`run_mt4_magic_number_tests.ps1` 模式（保留，向后兼容）
 
-**泛化方向**：任意 MQL4 算法 → 编译 → Strategy Tester → 解析日志 → 返回 PASS/FAIL
+**泛化产物**：
+- `run_ea_test.ps1`：通用 EA 测试 runner，接受任意 EA 名 + 测试参数，解析 `AUTO_TEST_SUMMARY` 输出 PASS/FAIL
+- `EaTestBase.mqh`：测试基础库，新测试 EA 只需 `#include "EaTestBase.mqh"` + 实现 `RunTests()`
 
-**并发约束（已实现）**：
-- 同一 runner（`domain_experts/forex/ea/.mt4_portable_runner`）同一时刻只允许一个测试任务
-- 启动前必须检查 `terminal.exe` 进程占用；若已在运行同配置/同实例，脚本直接阻断，避免日志和 report 互相污染
+**使用方式**：
+```powershell
+# 运行任意测试 EA
+.\run_ea_test.ps1 -EaName MyTestEA
 
-**blockcell 用途**：
-- blockcell CI：每次修改 EA 代码自动触发测试
-- 算法正确性验证：用 Tickstory 数据做确定性回归测试
+# 等价替代旧脚本（校验期望数量）
+.\run_ea_test.ps1 -EaName TestMagicNumberBugEA -ExpectedExplorePasses 3 -ExpectedPreservePasses 5
+```
 
 ---
 
@@ -143,9 +146,10 @@ P3（特征工程）✅ 已完成
   └── mt4_features skill（Rhai + SKILL.md）
       依赖：P0 + P2
 
-P4（CI 测试框架）
-  └── 泛化 run_mt4_magic_number_tests.ps1 → 通用 EA 测试 runner
-      状态：已有基础，待泛化
+P4（CI 测试框架）✅ 已完成
+  ├── run_ea_test.ps1（通用 EA 测试 runner，接受任意 EA 名，解析 AUTO_TEST_SUMMARY）
+  └── EaTestBase.mqh（测试基础库，AssertExplore/AssertPreserve/RunAllTests）
+      已有基础：run_mt4_magic_number_tests.ps1（保留，向后兼容）
 ```
 
 ---
@@ -158,13 +162,15 @@ P4（CI 测试框架）
 | ZMQ Python client | `ea/scripts/zmq_client.py` | 已验证 |
 | mt4_query skill | `domain_experts/forex/skills/mt4_query/` | 已写 |
 | 旧版 EA 现状记录 | `ea/docs/DataService_EA_status.md` | 已完成 |
-| headless 测试框架 | `ea/scripts/run_mt4_magic_number_tests.ps1` | 已完成 |
+| headless 测试框架（旧，向后兼容） | `ea/scripts/run_mt4_magic_number_tests.ps1` | 已完成 |
 | ForexStrategyExecutor | `ea/ForexStrategyExecutor.mq4` | 已完成（含 magic number 修复）|
 | run_replay.ps1 | `ea/scripts/run_replay.ps1` | 已完成（P2）|
 | ReplayWorker.mq4 | `ea/ReplayWorker.mq4` | 已完成（P2）|
 | FeatureWorker.mq4 | `ea/FeatureWorker.mq4` | 已完成（P3）|
 | run_feature.ps1 | `ea/scripts/run_feature.ps1` | 已完成（P3）|
 | mt4_features skill | `domain_experts/forex/skills/mt4_features/` | 已完成（P3）|
+| run_ea_test.ps1 | `ea/scripts/run_ea_test.ps1` | 已完成（P4，通用 EA 测试 runner）|
+| EaTestBase.mqh | `ea/include/EaTestBase.mqh` | 已完成（P4，测试基础库）|
 
 ---
 
