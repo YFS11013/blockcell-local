@@ -33,6 +33,7 @@ input string LogLevel = "INFO";               // 日志级别：DEBUG, INFO, WAR
 input int ParamCheckInterval = 300;           // 参数检查间隔（秒）
 input bool AutoDetectUTCOffset = true;        // 自动探测服务器 UTC 偏移（失败回退手工值）
 input int ServerUTCOffset = 2;                // 服务器时区偏移（小时），例如：+2 表示 UTC+2
+input int MagicNumber = 12345;                // EA 魔术号（必须 > 0，用于区分本 EA 订单）
 
 //+------------------------------------------------------------------+
 //| 回测模式专用参数                                                  |
@@ -339,7 +340,7 @@ int OnInit()
     LogInfo("EA", "EA 版本: " + EA_VERSION);
     
     // 初始化持仓管理器
-    InitPositionManager();
+    InitPositionManager(MagicNumber);
     
     // 初始化风险管理器
     InitRiskState();
@@ -529,6 +530,12 @@ bool ValidateInputParameters()
     // 验证服务器 UTC 偏移
     if(ServerUTCOffset < -14 || ServerUTCOffset > 14) {
         Print("ERROR: 无效的服务器 UTC 偏移: " + IntegerToString(ServerUTCOffset));
+        return false;
+    }
+    
+    // 验证魔术号（必须 > 0，否则无法区分本 EA 订单）
+    if(MagicNumber <= 0) {
+        Print("ERROR: MagicNumber must be > 0, got " + IntegerToString(MagicNumber));
         return false;
     }
     
@@ -725,8 +732,8 @@ bool ExecutePendingSignal(ParameterPack &params)
     // Dry Run：仅记录，不下单
     if(DryRun) {
         LogInfo("EA", "========== DRY RUN 模式 ==========");
-        LogInfo("EA", StringFormat("模拟开仓: 品种=%s, 缓存入场(close)=%.5f, 止损=%.5f, 总手数=%.2f",
-                Symbol(), signal.entry_price, signal.stop_loss, total_lots));
+        LogInfo("EA", StringFormat("模拟开仓: 品种=%s, 缓存入场(close)=%.5f, 止损=%.5f, 总手数=%.2f, MagicNumber=%d",
+                Symbol(), signal.entry_price, signal.stop_loss, total_lots, MagicNumber));
         
         for(int i = 0; i < tp_count; i++) {
             LogInfo("EA", StringFormat("  订单 %d: 手数=%.2f, 止盈=%.5f", 
@@ -743,7 +750,7 @@ bool ExecutePendingSignal(ParameterPack &params)
     ArrayResize(tickets, tp_count);
     
     int success_count = OpenMultiplePositions(splits, tp_count, signal.entry_price, signal.stop_loss, 
-                                              (int)params.max_slippage_points, tickets);
+                                              (int)params.max_slippage_points, tickets, MagicNumber);
     
     if(success_count == tp_count) {
         LogInfo("EA", StringFormat("成功开仓 %d 个订单（全部成功）", tp_count));

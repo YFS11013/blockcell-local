@@ -12,6 +12,16 @@
 #property copyright "MT4 Forex Strategy Executor"
 #property strict
 
+// ===== UNIT TEST 宏重定向（严格隔离，不污染生产构建）=====
+#ifdef UNIT_TEST
+  #define ORDER_SEND      MockOrderSend
+  #define GET_LAST_ERROR  MockGetLastError
+#else
+  #define ORDER_SEND      OrderSend
+  #define GET_LAST_ERROR  GetLastError
+#endif
+// ===== END UNIT TEST =====
+
 #ifndef ORDER_EXECUTOR_MQH
 #define ORDER_EXECUTOR_MQH
 
@@ -78,29 +88,37 @@ bool IsRetryableError(int error_code)
 //|   stop_loss - 止损价格                                           |
 //|   take_profit - 止盈价格                                         |
 //|   slippage - 最大允许滑点（点数）                                |
+//|   magic - EA 魔术号（必须 > 0，用于区分本 EA 订单）              |
 //| 返回：                                                            |
 //|   订单号（>0 成功，-1 失败）                                     |
 //| 说明：                                                            |
-//|   1. 准备订单参数（V1 固定做空 OP_SELL）                         |
-//|   2. 执行 OrderSend（最多重试 3 次）                             |
-//|   3. 识别可重试和不可重试错误                                    |
-//|   4. 实现重试逻辑（间隔 1 秒）                                   |
-//|   5. 记录实际滑点                                                |
-//|   6. 所有异常情况优先保护账户安全                                |
+//|   1. 校验 magic > 0，否则记录警告并直接返回 -1（不进重试）        |
+//|   2. 准备订单参数（V1 固定做空 OP_SELL）                         |
+//|   3. 执行 OrderSend（最多重试 3 次）                             |
+//|   4. 识别可重试和不可重试错误                                    |
+//|   5. 实现重试逻辑（间隔 1 秒）                                   |
+//|   6. 记录实际滑点                                                |
+//|   7. 所有异常情况优先保护账户安全                                |
 //+------------------------------------------------------------------+
-int OpenPosition(double lots, double entry, double stop_loss, double take_profit, int slippage)
+int OpenPosition(double lots, double entry, double stop_loss, double take_profit, int slippage, int magic)
 {
     Print("========== OpenPosition 开始 ==========");
-    Print("参数: lots=", lots, ", entry=", entry, ", sl=", stop_loss, ", tp=", take_profit, ", slippage=", slippage);
+    Print("参数: lots=", lots, ", entry=", entry, ", sl=", stop_loss, ", tp=", take_profit, ", slippage=", slippage, ", magic=", magic);
     
-    // 1. 准备订单参数
+    // 1. 校验 magic 参数（参数非法不进重试，直接返回失败）
+    if(magic <= 0) {
+        Print("WARN: OpenPosition called with invalid magic=", magic, ", rejecting (magic must be > 0)");
+        Print("========== OpenPosition 结束: 失败（magic 参数非法）==========");
+        return -1;
+    }
+    
+    // 2. 准备订单参数
     int cmd = OP_SELL;  // V1 固定做空
     double volume = lots;
     int slippage_points = slippage;
     double stoploss = stop_loss;
     double takeprofit = take_profit;
     string comment = "ForexStrategyExecutor";  // 基础备注，后续可添加版本号等信息
-    int magic = 0;  // 魔术号（可选）
     datetime expiration = 0;  // 过期时间（0 表示不过期）
     color arrow_color = clrRed;  // 箭头颜色
     
@@ -117,7 +135,7 @@ int OpenPosition(double lots, double entry, double stop_loss, double take_profit
               ", sl=", stoploss, ", tp=", takeprofit);
         
         // 执行 OrderSend
-        int ticket = OrderSend(Symbol(), cmd, volume, price, slippage_points, 
+        int ticket = ORDER_SEND(Symbol(), cmd, volume, price, slippage_points, 
                               stoploss, takeprofit, comment, magic, expiration, arrow_color);
         
         // 3. 检查结果
@@ -142,14 +160,14 @@ int OpenPosition(double lots, double entry, double stop_loss, double take_profit
                     // 根据需求 3.6，记录滑点事件到日志
                 }
             } else {
-                Print("WARN: 无法选择订单 ", ticket, " 来记录滑点，错误码=", GetLastError());
+                Print("WARN: 无法选择订单 ", ticket, " 来记录滑点，错误码=", GET_LAST_ERROR());
             }
             
             Print("========== OpenPosition 结束: 成功 ==========");
             return ticket;
         } else {
             // 开仓失败
-            int error = GetLastError();
+            int error = GET_LAST_ERROR();
             Print("ERROR: OpenPosition - 尝试 ", attempt, " 失败, 错误码=", error, ", 错误信息=", ErrorDescription(error));
             
             // 5. 判断是否可重试
@@ -196,10 +214,10 @@ int OpenPosition(double lots, double entry, double stop_loss, double take_profit
 //|   3. 调用 OpenPosition 执行开仓                                  |
 //|   4. 记录所有成功的订单号                                        |
 //+------------------------------------------------------------------+
-int OpenMultiplePositions(LotSplit &splits[], int split_count, double entry, double stop_loss, int slippage, int &tickets[])
+int OpenMultiplePositions(LotSplit &splits[], int split_count, double entry, double stop_loss, int slippage, int &tickets[], int magic)
 {
     Print("========== OpenMultiplePositions 开始 ==========");
-    Print("拆单数量: ", split_count, ", entry=", entry, ", sl=", stop_loss, ", slippage=", slippage);
+    Print("拆单数量: ", split_count, ", entry=", entry, ", sl=", stop_loss, ", slippage=", slippage, ", magic=", magic);
     
     // 调整输出数组大小
     ArrayResize(tickets, split_count);
@@ -213,8 +231,8 @@ int OpenMultiplePositions(LotSplit &splits[], int split_count, double entry, dou
         
         Print("开仓订单 ", i + 1, "/", split_count, ": lots=", lots, ", tp=", tp_price);
         
-        // 调用 OpenPosition 执行开仓
-        int ticket = OpenPosition(lots, entry, stop_loss, tp_price, slippage);
+        // 调用 OpenPosition 执行开仓（透传 magic 参数）
+        int ticket = OpenPosition(lots, entry, stop_loss, tp_price, slippage, magic);
         
         if(ticket > 0) {
             // 开仓成功
@@ -253,7 +271,7 @@ int OpenMultiplePositions(LotSplit &splits[], int split_count, double entry, dou
 bool GetOrderExecutorInfo(int ticket, OrderExecutorInfo &info)
 {
     if(!OrderSelect(ticket, SELECT_BY_TICKET)) {
-        Print("ERROR: GetOrderInfo - 无法选择订单 ", ticket, ", 错误码=", GetLastError());
+        Print("ERROR: GetOrderInfo - 无法选择订单 ", ticket, ", 错误码=", GET_LAST_ERROR());
         return false;
     }
     

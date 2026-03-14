@@ -7,6 +7,22 @@
 //+------------------------------------------------------------------+
 #property strict
 
+// ===== UNIT TEST 宏重定向（严格隔离，不污染生产构建）=====
+#ifdef UNIT_TEST
+  #define ORDERS_TOTAL    MockOrdersTotal
+  #define ORDER_SELECT    MockOrderSelect
+  #define ORDER_TYPE      MockOrderType
+  #define ORDER_SYMBOL    MockOrderSymbol
+  #define ORDER_MAGIC     MockOrderMagicNumber
+#else
+  #define ORDERS_TOTAL    OrdersTotal
+  #define ORDER_SELECT    OrderSelect
+  #define ORDER_TYPE      OrderType
+  #define ORDER_SYMBOL    OrderSymbol
+  #define ORDER_MAGIC     OrderMagicNumber
+#endif
+// ===== END UNIT TEST =====
+
 #ifndef POSITION_MANAGER_MQH
 #define POSITION_MANAGER_MQH
 
@@ -43,22 +59,26 @@ struct PositionOrderInfo {
 //| 全局变量                                                          |
 //+------------------------------------------------------------------+
 
+// EA 魔术号（由 InitPositionManager 设置，用于过滤本 EA 订单）
+int g_MagicNumber = 0;
+
 // 已跟踪的订单列表（用于检测平仓事件）
 int g_TrackedOrders[];
 
 //+------------------------------------------------------------------+
 //| 初始化持仓管理器                                                  |
 //+------------------------------------------------------------------+
-void InitPositionManager()
+void InitPositionManager(int magic_number)
 {
-    LogInfo("PositionManager", "持仓管理器初始化");
+    g_MagicNumber = magic_number;
+    LogInfo("PositionManager", "持仓管理器初始化, MagicNumber=" + IntegerToString(g_MagicNumber));
     
     // 初始化跟踪列表
     ArrayResize(g_TrackedOrders, 0);
     
     // 扫描现有持仓
     int positions[];
-    int count = GetOpenPositions(positions);
+    int count = GetOpenPositions(positions, g_MagicNumber);
     
     if(count > 0) {
         LogInfo("PositionManager", "检测到 " + IntegerToString(count) + " 个现有持仓");
@@ -78,26 +98,31 @@ void InitPositionManager()
 //| 返回：持仓订单数量                                                |
 //| 参数：positions - 输出数组，存储订单号                            |
 //+------------------------------------------------------------------+
-int GetOpenPositions(int &positions[])
+int GetOpenPositions(int &positions[], int magic_number)
 {
     ArrayResize(positions, 0);
     
-    int total = OrdersTotal();
+    int total = ORDERS_TOTAL();
     int count = 0;
     
     for(int i = 0; i < total; i++) {
-        if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) {
+        if(!ORDER_SELECT(i, SELECT_BY_POS, MODE_TRADES)) {
             LogWarn("PositionManager", "OrderSelect 失败，索引: " + IntegerToString(i));
             continue;
         }
         
         // 只处理当前品种的订单
-        if(OrderSymbol() != Symbol()) {
+        if(ORDER_SYMBOL() != Symbol()) {
+            continue;
+        }
+        
+        // 只处理本 EA 的订单（按 magic number 过滤）
+        if(ORDER_MAGIC() != magic_number) {
             continue;
         }
         
         // 只处理市价单（持仓）
-        int order_type = OrderType();
+        int order_type = ORDER_TYPE();
         if(order_type != OP_BUY && order_type != OP_SELL) {
             continue;
         }
@@ -158,7 +183,7 @@ PositionStats GetPositionStats()
     stats.total_loss = 0.0;
     
     int positions[];
-    int count = GetOpenPositions(positions);
+    int count = GetOpenPositions(positions, g_MagicNumber);
     
     stats.total_positions = count;
     
@@ -261,9 +286,9 @@ void AddToTrackedOrders(int ticket)
 //+------------------------------------------------------------------+
 void CheckPositions()
 {
-    // 获取当前所有持仓
+    // 获取当前所有持仓（只获取本 EA 的订单）
     int current_positions[];
-    int current_count = GetOpenPositions(current_positions);
+    int current_count = GetOpenPositions(current_positions, g_MagicNumber);
     
     // 检查跟踪列表中的订单是否已平仓
     int tracked_size = ArraySize(g_TrackedOrders);
