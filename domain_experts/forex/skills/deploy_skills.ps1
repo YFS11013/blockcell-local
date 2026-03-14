@@ -88,6 +88,19 @@ Get-ChildItem -Path $SkillsSourceDir -Directory | ForEach-Object {
             Write-Host "[COPY] $skillName/$file"
         }
     }
+
+    # 检测目标中存在但源端已不存在的运行时文件（残留旧逻辑风险）
+    if (-not $DryRun -and (Test-Path -LiteralPath $skillDst -PathType Container)) {
+        foreach ($file in $runtimeFiles) {
+            $dst = Join-Path $skillDst $file
+            $src = Join-Path $skillSrc $file
+            if ((Test-Path -LiteralPath $dst -PathType Leaf) -and
+                -not (Test-Path -LiteralPath $src -PathType Leaf)) {
+                Write-Warning "[$skillName] 目标中存在 '$file'，但源端已不存在。可能是旧版残留，请手动确认是否删除：$dst"
+            }
+        }
+    }
+
     $deployed++
 }
 
