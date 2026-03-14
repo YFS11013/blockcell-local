@@ -163,6 +163,15 @@ string ReadFile(string path) {
     return content;
 }
 
+// ISO 8601 UTC 时间字符串（MT4 无内置格式化，手动拼接）
+string IsoTimeGMT() {
+    datetime t = TimeGMT();
+    MqlDateTime dt;
+    TimeToStruct(t, dt);
+    return StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+        dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
+}
+
 void WriteHeartbeat(string status, int done, int total) {
     double pct = (total > 0) ? (100.0 * done / total) : 0;
     string json = StringFormat(
@@ -170,7 +179,7 @@ void WriteHeartbeat(string status, int done, int total) {
         "\"progress_pct\":%.1f,\"current_bar\":%d,\"total_bars\":%d,"
         "\"ea_version\":\"1.0\"}",
         g_jobId, status,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS),
+        IsoTimeGMT(),
         pct, done, total
     );
     WriteFile(g_heartbeatPath, json);
@@ -181,7 +190,7 @@ void WriteError(string code, string message) {
         "{\"job_id\":\"%s\",\"error_code\":\"%s\","
         "\"error_message\":\"%s\",\"timestamp\":\"%s\"}",
         g_jobId, code, message,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS)
+        IsoTimeGMT()
     );
     WriteFile(g_errorFilePath, json);
 }
@@ -266,7 +275,7 @@ void ComputeAndWriteFeatures() {
     string featuresJson = "{";
     featuresJson += "\"job_id\":\"" + g_jobId + "\",";
     featuresJson += "\"as_of_date\":\"" + g_asOfDate + "\",";
-    featuresJson += "\"computed_at\":\"" + TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS) + "\",";
+    featuresJson += "\"computed_at\":\"" + IsoTimeGMT() + "\",";
     featuresJson += "\"features\":{";
 
     for (int i = 0; i < g_symbolCount; i++) {
@@ -353,7 +362,7 @@ void ComputeAndWriteFeatures() {
         "\"features\":%s"
         "}}",
         g_jobId,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS),
+        IsoTimeGMT(),
         g_symbolCount,
         g_featuresPath,
         featuresJson
@@ -452,12 +461,23 @@ void OnTick() {
 void OnDeinit(const int reason) {
     if (!g_initOk) return;
 
-    // 如果 OnTick 未触发（极端情况），在 OnDeinit 补算
+    // REASON_FINISHED(1) = Strategy Tester 正常跑完
+    // 其他 reason（如 REASON_REMOVE=2, REASON_RECOMPILE=3 等）视为异常中断
+    bool normalExit = (reason == REASON_FINISHED);
+
     if (!g_computed) {
-        g_computed = true;
-        ComputeAndWriteFeatures();
+        if (normalExit) {
+            // 正常结束但 OnTick 未触发（极端情况：日期范围内无 bar）
+            g_computed = true;
+            ComputeAndWriteFeatures();
+        } else {
+            // 异常中断：写 error，不写成功 result
+            string msg = StringFormat("EA 异常退出（reason=%d），计算未完成", reason);
+            WriteError("EA_INIT_FAILED", msg);
+            Print("[FeatureWorker] 异常退出: ", msg);
+        }
     }
 
     WriteHeartbeat("idle", g_symbolCount, g_symbolCount);
-    Print("[FeatureWorker] OnDeinit: reason=", reason);
+    Print("[FeatureWorker] OnDeinit: reason=", reason, " computed=", g_computed);
 }

@@ -142,16 +142,16 @@ foreach ($d in @($runnerExpertsDir, $runnerExpertsIncludeDir, $runnerIncludeDir,
     Ensure-Dir -Path $d
 }
 
-# ── 历史数据检查（FeatureWorker 只需任意品种的 H4 数据存在即可）────────────────
+# ── 历史数据检查（固定跑 EURUSD H4，精确校验 EURUSD240.hst）────────────────────
 
 $historyRoot = Join-Path $RunnerDir "history"
 $historyServerDir = Get-ChildItem -Path $historyRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { (Get-ChildItem -Path $_.FullName -Filter "*.hst" -ErrorAction SilentlyContinue).Count -gt 0 } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "EURUSD240.hst") } |
     Sort-Object Name |
     Select-Object -First 1
 
 if ($null -eq $historyServerDir) {
-    $msg = "runner 内未找到任何 .hst 历史数据，请先准备历史数据后重试。"
+    $msg = "runner 内未找到 EURUSD240.hst 历史数据（FeatureWorker 固定使用 EURUSD H4 触发），请先准备历史数据后重试。"
     Write-ErrorJson -Path $errorPath -JobId $jobId -Code "SYMBOL_NOT_AVAILABLE" -Message $msg
     throw $msg
 }
@@ -361,15 +361,27 @@ if ($timedOut) {
         meta             = $job.meta
     }
 } elseif ($null -ne $eaResultData) {
+    # 透传 EA 的 status，不强制覆盖为 success
+    $eaStatus = if ($eaResultData.status) { $eaResultData.status } else { "success" }
+    $eaErrMsg = if ($eaResultData.error_message) { $eaResultData.error_message } else { $null }
+
+    # 将 features_file 放入 data（符合 result.schema.json additionalProperties:false）
+    $dataObj = $eaResultData.data
+    if ($null -ne $dataObj -and $null -ne $eaFeaturesData) {
+        $dataObj | Add-Member -NotePropertyName "features_file" -NotePropertyValue (Join-Path $jobDir "features.json") -Force
+    }
+
     $resultObj = [ordered]@{
         job_id           = $jobId
         job_type         = "feature"
-        status           = "success"
+        status           = $eaStatus
         finished_at      = $finishedAt
         duration_seconds = $durationSec
-        data             = $eaResultData.data
-        features_file    = (Join-Path $jobDir "features.json")
+        data             = $dataObj
         meta             = $job.meta
+    }
+    if ($null -ne $eaErrMsg) {
+        $resultObj["error_message"] = $eaErrMsg
     }
 } else {
     $resultObj = [ordered]@{
