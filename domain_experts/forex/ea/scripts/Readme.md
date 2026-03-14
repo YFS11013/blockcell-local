@@ -139,37 +139,41 @@ Skip compile and reuse existing `ForexStrategyExecutor.ex4` in runner:
 pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_task14_backtest.ps1" -SkipCompile
 ```
 
-## 3.5) Run Magic Number Auto Tests (Headless)
+## 3.5) Run General EA Tests (Headless)
 
-Script: `run_mt4_magic_number_tests.ps1`
+Script: `run_ea_test.ps1`
 
 What it does:
 
-- syncs `tests/TestMagicNumberBugEA.mq4` + `include/*.mqh` into runner
-- compiles `TestMagicNumberBugEA.mq4` via `metaeditor.exe`
+- syncs `tests/<EaName>.mq4` + `include/*.mqh` into runner
+- compiles `<EaName>.mq4` via `metaeditor.exe`
 - runs Strategy Tester once in portable runner
-- before launching, checks whether runner `terminal.exe` is already running with the same config (or same runner instance) and aborts to avoid artifact/log conflicts
+- before launching, checks runner `terminal.exe` conflicts and aborts to avoid artifact/log contamination
 - parses tester logs for:
   - `AUTO_TEST_SUMMARY: explore_pass=... explore_fail=... preserve_pass=... preserve_fail=... total_fail=...`
   - `AUTO_TEST_RESULT: PASS|FAIL`
 - exits non-zero on test failure / timeout / missing summary
 
-Run:
+Run any test EA:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1"
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_ea_test.ps1" -EaName "MyCustomTestEA"
 ```
 
-Skip compile and reuse existing `TestMagicNumberBugEA.ex4`:
+Magic-number acceptance (same assertions as legacy script):
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -SkipCompile
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_ea_test.ps1" -EaName "TestMagicNumberBugEA" -ExpectedExplorePasses 3 -ExpectedPreservePasses 5
 ```
 
 Artifacts:
 
-- `domain_experts/forex/ea/backtest_artifacts/magic_number_tests_YYYYMMDD_HHMMSS/`
+- `domain_experts/forex/ea/backtest_artifacts/test_<EaName>_YYYYMMDD_HHMMSS/`
 - contains `summary.json`, compile log, copied tester logs, and report file
+
+Legacy compatibility:
+
+- fixed-purpose script `run_mt4_magic_number_tests.ps1` is kept for backward compatibility
 
 ## 4) Run Task 14.5 Live-vs-Backtest Consistency Check
 
@@ -493,35 +497,17 @@ Manual dry run (no file deletion):
 pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/cleanup_runner_logs.ps1" -RetentionDays 7 -MaxTotalSizeMB 512 -DryRun
 ```
 
-## 10) Run Magic Number Auto Tests (Headless)
+## 10) Legacy: Run Magic Number Auto Tests (Headless)
 
 Script: `run_mt4_magic_number_tests.ps1`
 
-What it does:
+说明：
 
-- syncs `tests/TestMagicNumberBugEA.mq4` + `include/*.mqh` into runner
-- compiles `TestMagicNumberBugEA.mq4` via `metaeditor.exe`
-- runs the EA in Strategy Tester (headless); tests execute in `OnInit`
-- parses `AUTO_TEST_SUMMARY` / `AUTO_TEST_RESULT` from tester log
-- exits with error (throw) if any test fails or log is missing
-- writes artifacts under `backtest_artifacts/magic_number_tests_YYYYMMDD_HHMMSS/`
-
-Expected result: `explore: 3 pass / 0 fail`, `preserve: 5 pass / 0 fail`, `auto_result: PASS`
+- 该脚本保留用于向后兼容旧调用链
+- 新增测试建议统一走 `run_ea_test.ps1`（见 3.5 节）
 
 Run:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1"
-```
-
-Skip recompile (reuse existing `.ex4`):
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -SkipCompile
-```
-
-Custom runner path:
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -RunnerDir "C:\path\to\runner"
 ```

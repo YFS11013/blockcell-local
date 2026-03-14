@@ -6,7 +6,7 @@
 
 **文件协议**：blockcell 与 MT4 EA 之间通过 JSON 文件交换任务和结果，无需实时网络连接。核心文件：
 - `job.json`：调用方写入，描述任务（品种、特征、时间范围等）
-- `result.json`：EA 完成后写入，包含状态（success/failed/timeout）和摘要数据
+- `result.json`：EA 完成后写入，包含状态（success/failed/timeout/partial）和摘要数据
 - `features.json`：特征计算结果（本 skill 专有）
 - `heartbeat.json`：EA 运行中定期更新，供调用方监控进度
 
@@ -90,7 +90,7 @@ EURUSD
 {
   "job_id": "feature_20260314_120000_ab12",
   "as_of_date": "2026-03-14",
-  "computed_at": "2026-03-14 12:05:33",
+  "computed_at": "2026-03-14T12:05:33Z",
   "features": {
     "EURUSD": {
       "RSI_H4": 58.32,
@@ -112,7 +112,9 @@ EURUSD
 }
 ```
 
-### result.json（P0 协议标准格式）
+### result.json
+
+`status` 枚举：`success` / `failed` / `timeout` / `partial`（部分品种成功）
 
 ```json
 {
