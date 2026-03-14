@@ -55,7 +55,7 @@ blockcell skill: mt4_query
 
 ---
 
-## 方向二：历史数据回放验证（P2 — 规划中）
+## 方向二：历史数据回放验证（P2 — 已完成）
 
 **依赖**：Tickstory 高质量 tick 库 + 现有 `run_mt4_task14_backtest.ps1` 基础设施
 
@@ -64,9 +64,14 @@ blockcell skill: mt4_query
 blockcell 写 job.json（品种/时间范围/EA参数）
   → run_replay.ps1（泛化版 backtest 脚本）
   → Tickstory 导出 .hst → MT4 Strategy Tester（Every Tick）
-  → replay_worker EA 执行算法 → 写 result.json
+  → ReplayWorker.mq4 执行算法 → 写 result_{job_id}.json
+  → run_replay.ps1 读取结果，写到 job 目录 result.json
   → blockcell 读取结果，汇总/通知
 ```
+
+**组件**：
+- `run_replay.ps1`：接受 `job.json`，支持任意 EA + 品种 + 日期范围，写 `result.json`
+- `ReplayWorker.mq4`：通用回放 EA，读 `job.json`，写 `result.json` + `heartbeat.json`
 
 **blockcell 用途**：
 - 验证 blockcell 生成的信号在历史数据上的命中率
@@ -75,8 +80,8 @@ blockcell 写 job.json（品种/时间范围/EA参数）
 - 用 Tickstory 99.9% tick 质量做确定性验证
 
 **与现有基础设施的关系**：
-- `run_mt4_task14_backtest.ps1` 已是此模式，只需泛化参数（EA 名、品种、日期范围可配置）
-- `job.json` 替代现有 `.ini` 硬编码
+- `run_mt4_task14_backtest.ps1` 已是此模式，`run_replay.ps1` 是其泛化版
+- `job.json` 替代现有 `.ini` 硬编码，`ea_params` 替代 `.set` 硬编码
 
 ---
 
@@ -132,10 +137,10 @@ P1（实时数据 RPC）✅ 已完成
   └── mt4_query skill（Rhai + SKILL.md）
       当前：使用旧版 EA（1.2_IntegerTypeFix），ZMQ 链路已验证通
 
-P2（历史回放泛化）
-  └── run_replay.ps1（接受 job.json，支持任意 EA + 品种 + 日期范围）
+P2（历史回放泛化）✅ 已完成
+  ├── run_replay.ps1（接受 job.json，支持任意 EA + 品种 + 日期范围）
+  └── ReplayWorker.mq4（通用回放 EA，写 result.json + heartbeat.json）
       依赖：P0 文件协议
-      状态：待实现
 
 P3（特征工程）
   └── feature_worker EA + mt4_features skill
@@ -159,6 +164,8 @@ P4（CI 测试框架）
 | 旧版 EA 现状记录 | `ea/docs/DataService_EA_status.md` | 已完成 |
 | headless 测试框架 | `ea/scripts/run_mt4_magic_number_tests.ps1` | 已完成 |
 | ForexStrategyExecutor | `ea/ForexStrategyExecutor.mq4` | 已完成（含 magic number 修复）|
+| run_replay.ps1 | `ea/scripts/run_replay.ps1` | 已完成（P2）|
+| ReplayWorker.mq4 | `ea/ReplayWorker.mq4` | 已完成（P2）|
 
 ---
 
