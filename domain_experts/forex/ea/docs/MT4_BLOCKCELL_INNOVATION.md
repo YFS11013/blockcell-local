@@ -85,26 +85,21 @@ blockcell 写 job.json（品种/时间范围/EA参数）
 
 ---
 
-## 方向三：特征工程流水线（P3 — 规划中）
+## 方向三：特征工程流水线（P3 — 已完成）
 
 **链路**：
 ```
 blockcell 写 feature_job.json（品种列表 + 特征列表 + as_of_date）
+  → run_feature.ps1
   → MT4 Strategy Tester（Tickstory 数据）
-  → feature_worker EA 计算特征 → 写 features.json
+  → FeatureWorker.mq4 计算特征 → 写 features.json + result.json
   → blockcell agent 消费特征做决策
 ```
 
-**EA 可计算的特征**（MT4 内置，比 Python 调 API 快）：
-- 多周期 ATR（波动率特征）
-- 多周期 MA 排列（趋势特征）
-- Bollinger Band 位置（均值回归特征）
-- Fractal/Pivot 支撑阻力位
-- 市场状态分类（趋势/震荡/突破）
-
-**blockcell 用途**：
-- 每日定时生成特征包，供 agent 做市场分析
-- 替代 Python 调 broker REST API（本地计算，无网络依赖）
+**组件**：
+- `FeatureWorker.mq4`：读 `job.json`，计算多品种特征，写 `features.json` + `result.json`
+- `run_feature.ps1`：接受 `job.json`，驱动 FeatureWorker，写产物到 job 目录
+- `mt4_features` skill：Rhai + SKILL.md，blockcell 调用入口
 
 ---
 
@@ -142,10 +137,11 @@ P2（历史回放泛化）✅ 已完成
   └── ReplayWorker.mq4（通用回放 EA，写 result.json + heartbeat.json）
       依赖：P0 文件协议
 
-P3（特征工程）
-  └── feature_worker EA + mt4_features skill
+P3（特征工程）✅ 已完成
+  ├── FeatureWorker.mq4（读 job.json，计算多品种特征，写 features.json + result.json）
+  ├── run_feature.ps1（接受 job.json，驱动 FeatureWorker，写产物到 job 目录）
+  └── mt4_features skill（Rhai + SKILL.md）
       依赖：P0 + P2
-      状态：待实现
 
 P4（CI 测试框架）
   └── 泛化 run_mt4_magic_number_tests.ps1 → 通用 EA 测试 runner
@@ -166,6 +162,9 @@ P4（CI 测试框架）
 | ForexStrategyExecutor | `ea/ForexStrategyExecutor.mq4` | 已完成（含 magic number 修复）|
 | run_replay.ps1 | `ea/scripts/run_replay.ps1` | 已完成（P2）|
 | ReplayWorker.mq4 | `ea/ReplayWorker.mq4` | 已完成（P2）|
+| FeatureWorker.mq4 | `ea/FeatureWorker.mq4` | 已完成（P3）|
+| run_feature.ps1 | `ea/scripts/run_feature.ps1` | 已完成（P3）|
+| mt4_features skill | `domain_experts/forex/skills/mt4_features/` | 已完成（P3）|
 
 ---
 

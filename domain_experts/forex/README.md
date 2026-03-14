@@ -24,6 +24,7 @@
 - `skills/forex_strategy_generator/ONLINE_STRICT_ACCEPTANCE_2026-03-10.md`：在线严格验收记录
 - `skills/mt4_query/README.md`：mt4_query skill（ZMQ 实时查询）
 - `skills/mt4_query/SKILL.md`：mt4_query 命令参考文档
+- `skills/mt4_features/SKILL.md`：mt4_features skill（离线特征计算）
 
 ## 历史/证据文档（按需查看）
 
