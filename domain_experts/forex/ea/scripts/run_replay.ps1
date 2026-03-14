@@ -316,6 +316,17 @@ Write-AsciiFile -Path $configPath -Content ($configContent + "`r`n")
 
 Assert-NoRunnerConflict -RunnerRoot $RunnerDir
 
+# ── 启动前清理同 job_id 的旧产物，防止重跑时读到上次残留结果 ─────────────────
+
+$runnerResultFile = Join-Path $runnerTesterFilesDir "result_${jobId}.json"
+$runnerErrorFile  = Join-Path $runnerTesterFilesDir "error_${jobId}.json"
+foreach ($stale in @($runnerResultFile, $runnerErrorFile)) {
+    if (Test-Path -LiteralPath $stale -PathType Leaf) {
+        Remove-Item -LiteralPath $stale -Force
+        Write-Host "[INFO] 清理旧产物: $stale"
+    }
+}
+
 # ── 启动 MT4 Strategy Tester ──────────────────────────────────────────────────
 
 $before = @{}
@@ -352,17 +363,6 @@ Get-ChildItem -Path $testerLogsDir -File -ErrorAction SilentlyContinue | Sort-Ob
     if ($oldTicks -ne $_.LastWriteTimeUtc.Ticks) {
         $changedLogs += $_.FullName
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $artifactRoot $_.Name) -Force
-    }
-}
-
-# ── Bug5 修复：启动前清理同 job_id 的旧产物，防止重跑读到旧结果 ──────────────
-
-$runnerResultFile = Join-Path $runnerTesterFilesDir "result_${jobId}.json"
-$runnerErrorFile  = Join-Path $runnerTesterFilesDir "error_${jobId}.json"
-foreach ($stale in @($runnerResultFile, $runnerErrorFile)) {
-    if (Test-Path -LiteralPath $stale -PathType Leaf) {
-        Remove-Item -LiteralPath $stale -Force
-        Write-Host "[INFO] 清理旧产物: $stale"
     }
 }
 
