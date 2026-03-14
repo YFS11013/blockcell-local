@@ -351,13 +351,19 @@ if ($timedOut) {
     }
     Write-ErrorJson -Path $errorPath -JobId $jobId -Code "TIMEOUT" -Message "FeatureWorker 超时"
 } elseif ($null -ne $eaErrorData) {
+    # Bug3 修复：eaErrorData.error_message 为空时兜底，确保 schema 合法（failed 必须有 error_message）
+    $eaErrMsg = if (-not [string]::IsNullOrWhiteSpace($eaErrorData.error_message)) {
+        [string]$eaErrorData.error_message
+    } else {
+        "FeatureWorker 报告错误，但 error.json 未提供 error_message"
+    }
     $resultObj = [ordered]@{
         job_id           = $jobId
         job_type         = "feature"
         status           = "failed"
         finished_at      = $finishedAt
         duration_seconds = $durationSec
-        error_message    = $eaErrorData.error_message
+        error_message    = $eaErrMsg
         meta             = $job.meta
     }
 } elseif ($null -ne $eaResultData) {

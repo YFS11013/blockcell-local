@@ -462,13 +462,13 @@ void OnDeinit(const int reason) {
     if (!g_initOk) return;
 
     // MQL4 中 OnDeinit reason 数值：
-    //   0 = REASON_PROGRAM（脚本/EA 正常退出）
-    //   1 = REASON_REMOVE（从图表移除）
+    //   0 = REASON_PROGRAM（Strategy Tester 正常跑完，或脚本正常退出）
+    //   1 = REASON_REMOVE（从图表移除 — 属于中断，不视为正常完成）
     //   2 = REASON_RECOMPILE
     //   3 = REASON_CHARTCHANGE
-    //   Strategy Tester 正常跑完时 reason=0
     // 注意：MQL4 没有 REASON_FINISHED 常量（MQL5 才有），直接用数值判断
-    bool normalExit = (reason == 0 || reason == 1);
+    // reason==1 是"被移除"，若计算未完成则属于中断，不应补算写成功结果
+    bool normalExit = (reason == 0);
 
     if (!g_computed) {
         if (normalExit) {
