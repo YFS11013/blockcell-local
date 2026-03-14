@@ -109,6 +109,10 @@ blockcell 写 feature_job.json（品种列表 + 特征列表 + as_of_date）
 
 **泛化方向**：任意 MQL4 算法 → 编译 → Strategy Tester → 解析日志 → 返回 PASS/FAIL
 
+**并发约束（已实现）**：
+- 同一 runner（`domain_experts/forex/ea/.mt4_portable_runner`）同一时刻只允许一个测试任务
+- 启动前必须检查 `terminal.exe` 进程占用；若已在运行同配置/同实例，脚本直接阻断，避免日志和 report 互相污染
+
 **blockcell 用途**：
 - blockcell CI：每次修改 EA 代码自动触发测试
 - 算法正确性验证：用 Tickstory 数据做确定性回归测试
@@ -151,7 +155,7 @@ P4（CI 测试框架）
 |------|------|------|
 | DataService_EA（新版） | `ea/DataService_EA.mq4` | 已写，待替换旧版 |
 | ZMQ Python client | `ea/scripts/zmq_client.py` | 已验证 |
-| mt4_query skill | `skills/mt4_query/` | 已写 |
+| mt4_query skill | `domain_experts/forex/skills/mt4_query/` | 已写 |
 | 旧版 EA 现状记录 | `ea/docs/DataService_EA_status.md` | 已完成 |
 | headless 测试框架 | `ea/scripts/run_mt4_magic_number_tests.ps1` | 已完成 |
 | ForexStrategyExecutor | `ea/ForexStrategyExecutor.mq4` | 已完成（含 magic number 修复）|
@@ -164,3 +168,4 @@ P4（CI 测试框架）
 - Strategy Tester 确定性依赖 Tickstory 相同数据（已满足）
 - 历史数据内部自用，不对外分发
 - `EXECUTE_TRADE` / `CLOSE_ORDER` 命令不暴露给 blockcell skill（只读接口原则）
+- 同一 runner 实例测试任务必须串行执行；检测到 `terminal.exe` 占用时阻断新任务
