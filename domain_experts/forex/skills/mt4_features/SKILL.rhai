@@ -1,4 +1,4 @@
-// mt4_features skill — 通过 P0 文件协议 + FeatureWorker EA 计算多品种技术特征
+// mt4_features skill — 通过文件协议（job/result/features JSON）+ FeatureWorker EA 计算多品种技术特征
 // 依赖：MT4 portable runner + FeatureWorker.mq4 + run_feature.ps1
 
 let input = ctx.user_input.trim();
