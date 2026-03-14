@@ -2,7 +2,15 @@
 
 ## 概述
 
-通过 P0 文件协议 + `FeatureWorker.mq4` 计算多品种技术特征，为 blockcell agent 提供离线特征包。
+通过文件协议 + `FeatureWorker.mq4` 计算多品种技术特征，为 blockcell agent 提供离线特征包。
+
+**文件协议**：blockcell 与 MT4 EA 之间通过 JSON 文件交换任务和结果，无需实时网络连接。核心文件：
+- `job.json`：调用方写入，描述任务（品种、特征、时间范围等）
+- `result.json`：EA 完成后写入，包含状态（success/failed/timeout）和摘要数据
+- `features.json`：特征计算结果（本 skill 专有）
+- `heartbeat.json`：EA 运行中定期更新，供调用方监控进度
+
+完整 schema 见 [`ea/protocol/PROTOCOL.md`](../../ea/protocol/PROTOCOL.md)。
 
 **定位**：批量特征计算，不依赖实时 ZMQ 连接，使用 MT4 Strategy Tester 离线运行。
 
