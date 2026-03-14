@@ -461,9 +461,14 @@ void OnTick() {
 void OnDeinit(const int reason) {
     if (!g_initOk) return;
 
-    // REASON_FINISHED(1) = Strategy Tester 正常跑完
-    // 其他 reason（如 REASON_REMOVE=2, REASON_RECOMPILE=3 等）视为异常中断
-    bool normalExit = (reason == REASON_FINISHED);
+    // MQL4 中 OnDeinit reason 数值：
+    //   0 = REASON_PROGRAM（脚本/EA 正常退出）
+    //   1 = REASON_REMOVE（从图表移除）
+    //   2 = REASON_RECOMPILE
+    //   3 = REASON_CHARTCHANGE
+    //   Strategy Tester 正常跑完时 reason=0
+    // 注意：MQL4 没有 REASON_FINISHED 常量（MQL5 才有），直接用数值判断
+    bool normalExit = (reason == 0 || reason == 1);
 
     if (!g_computed) {
         if (normalExit) {

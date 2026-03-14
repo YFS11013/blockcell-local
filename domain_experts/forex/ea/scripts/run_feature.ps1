@@ -361,11 +361,21 @@ if ($timedOut) {
         meta             = $job.meta
     }
 } elseif ($null -ne $eaResultData) {
-    # 透传 EA 的 status，不强制覆盖为 success
-    $eaStatus = if ($eaResultData.status) { $eaResultData.status } else { "success" }
-    $eaErrMsg = if ($eaResultData.error_message) { $eaResultData.error_message } else { $null }
+    # Bug2 修复：校验 EA 写出的 status 是否在合法枚举内
+    $validStatuses = @("success", "failed", "timeout", "partial")
+    $eaStatus = if ($eaResultData.status -and $validStatuses -contains $eaResultData.status) {
+        $eaResultData.status
+    } else {
+        Write-Host "[WARN] EA result.status 非法值: '$($eaResultData.status)'，降级为 partial"
+        "partial"
+    }
 
-    # 将 features_file 放入 data（符合 result.schema.json additionalProperties:false）
+    # Bug3 修复：status=failed 时必须有 error_message（schema allOf 约束）
+    $eaErrMsg = if ($eaResultData.error_message) { $eaResultData.error_message } else { $null }
+    if ($eaStatus -eq "failed" -and [string]::IsNullOrWhiteSpace($eaErrMsg)) {
+        $eaErrMsg = "FeatureWorker 报告失败，但未提供 error_message"
+    }
+
     $dataObj = $eaResultData.data
     if ($null -ne $dataObj -and $null -ne $eaFeaturesData) {
         $dataObj | Add-Member -NotePropertyName "features_file" -NotePropertyValue (Join-Path $jobDir "features.json") -Force
@@ -380,7 +390,7 @@ if ($timedOut) {
         data             = $dataObj
         meta             = $job.meta
     }
-    if ($null -ne $eaErrMsg) {
+    if (-not [string]::IsNullOrWhiteSpace($eaErrMsg)) {
         $resultObj["error_message"] = $eaErrMsg
     }
 } else {
