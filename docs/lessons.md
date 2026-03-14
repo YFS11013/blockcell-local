@@ -12,6 +12,7 @@
 | 日期 | 操作人 | 变更摘要 |
 |------|--------|----------|
 | 2026-03-12 | Codex | 重构为整理版（时间线+规则+检查清单+证据入口），并建立变更记录机制 |
+| 2026-03-14 | Kiro | P3 FeatureWorker：MQL4 无 REASON_FINISHED 常量（MQL5 专属），OnDeinit reason 需用数值；reason==1 是 REMOVE 不是正常完成 |
 
 ## 时间线索引
 
@@ -110,6 +111,14 @@
   - 过程文档标注“历史归档”
   - 主入口文档只保留当前有效结论与证据基准
   - 模板文档必须标注“非证据文档”
+
+### 11) MQL4 OnDeinit reason 数值语义
+
+- 反模式：使用 `REASON_FINISHED`（MQL5 专属常量）导致编译失败；把 `reason==1`（REMOVE）当正常完成处理
+- 规则：
+  - MQL4 中 `reason==0` 才是 Strategy Tester 正常跑完（REASON_PROGRAM）
+  - `reason==1` 是从图表移除（REMOVE），属于中断，不应触发补算写成功结果
+  - 所有 reason 判断直接用数值，不用常量名
 
 ## 可执行检查清单
 
