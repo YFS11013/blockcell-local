@@ -138,7 +138,7 @@ P1（实时数据 RPC）✅ 已完成
 P2（历史回放泛化）✅ 已完成
   ├── run_replay.ps1（接受 job.json，支持任意 EA + 品种 + 日期范围）
   └── ReplayWorker.mq4（通用回放 EA，写 result.json + heartbeat.json）
-      依赖：P0 文件协议
+      依赖：job/result JSON 文件协议（见 ea/protocol/PROTOCOL.md）
 
 P3（特征工程）✅ 已完成
   ├── FeatureWorker.mq4（读 job.json，计算多品种特征，写 features.json + result.json）
