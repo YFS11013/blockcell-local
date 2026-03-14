@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "blockcell/mt4/result",
+  "title": "MT4 Worker Result",
+  "description": "EA 写入，blockcell 读取。描述一次任务的执行结果。",
+  "type": "object",
+  "required": ["job_id", "job_type", "status", "finished_at"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "对应 job.json 的 job_id"
+    },
+    "job_type": {
+      "type": "string",
+      "enum": ["replay", "feature", "collect", "test"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "failed", "timeout", "partial"],
+      "description": "success=完整成功, failed=执行失败, timeout=超时, partial=部分成功"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "任务完成时间，ISO 8601 UTC"
+    },
+    "duration_seconds": {
+      "type": "number",
+      "description": "实际执行耗时（秒）"
+    },
+    "data": {
+      "type": "object",
+      "description": "任务输出数据，结构由 job_type 决定（见下方各类型说明）",
+      "additionalProperties": true
+    },
+    "meta": {
+      "type": "object",
+      "description": "从 job.json 透传的 meta 字段",
+      "additionalProperties": true
+    },
+    "error_message": {
+      "type": "string",
+      "description": "status=failed/timeout 时的错误描述"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "required": ["error_message"] }
+    }
+  ]
+}

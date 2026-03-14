@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "blockcell/mt4/heartbeat",
+  "title": "MT4 Worker Heartbeat",
+  "description": "EA 定期写入（建议每 10s），blockcell 用于判断 EA 是否存活及进度。",
+  "type": "object",
+  "required": ["job_id", "status", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "当前正在执行的 job_id"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "idle"],
+      "description": "running=正在执行任务, idle=空闲等待"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "心跳时间，ISO 8601 UTC"
+    },
+    "progress_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "任务进度百分比（0-100），可选"
+    },
+    "current_bar": {
+      "type": "integer",
+      "description": "当前处理到第几根 K 线（replay 类型专用）"
+    },
+    "total_bars": {
+      "type": "integer",
+      "description": "总 K 线数（replay 类型专用）"
+    },
+    "ea_version": {
+      "type": "string",
+      "description": "EA 版本号，便于调试"
+    }
+  }
+}

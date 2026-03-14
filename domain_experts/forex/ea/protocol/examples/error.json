@@ -1,0 +1,12 @@
+{
+  "job_id": "replay_20260314_153000_a1b2",
+  "error_code": "DATA_COPY_FAILED",
+  "error_message": "CopyRates returned -1 for EURUSD H4",
+  "timestamp": "2026-03-14T15:30:58Z",
+  "mt4_error_code": 4066,
+  "context": {
+    "symbol": "EURUSD",
+    "timeframe": 240,
+    "requested_bars": 1320
+  }
+}

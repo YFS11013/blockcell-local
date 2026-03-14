@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "blockcell/mt4/job",
+  "title": "MT4 Worker Job",
+  "description": "blockcell 写入，EA 读取。描述一次工作任务的输入参数。",
+  "type": "object",
+  "required": ["job_id", "job_type", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "全局唯一任务 ID，建议格式：{type}_{YYYYMMDD_HHMMSS}_{random4}",
+      "examples": ["replay_20260314_153000_a1b2"]
+    },
+    "job_type": {
+      "type": "string",
+      "enum": ["replay", "feature", "collect", "test"],
+      "description": "任务类型：replay=历史回放, feature=特征计算, collect=实时采集, test=测试验证"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "任务创建时间，ISO 8601 UTC，例如 2026-03-14T15:30:00Z"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "交易品种，例如 EURUSD",
+      "examples": ["EURUSD", "USDJPY", "GBPUSD"]
+    },
+    "timeframe": {
+      "type": "integer",
+      "description": "时间框架（分钟）：1/5/15/30/60/240/1440/10080",
+      "enum": [1, 5, 15, 30, 60, 240, 1440, 10080]
+    },
+    "date_from": {
+      "type": "string",
+      "format": "date",
+      "description": "回放/采集起始日期，格式 YYYY-MM-DD"
+    },
+    "date_to": {
+      "type": "string",
+      "format": "date",
+      "description": "回放/采集结束日期，格式 YYYY-MM-DD"
+    },
+    "ea_name": {
+      "type": "string",
+      "description": "EA 文件名（不含 .ex4），例如 ForexStrategyExecutor"
+    },
+    "ea_params": {
+      "type": "object",
+      "description": "传给 EA 的输入参数键值对，值统一为字符串",
+      "additionalProperties": { "type": "string" }
+    },
+    "output_path": {
+      "type": "string",
+      "description": "EA 写出 result.json 的相对路径（相对于 MQL4/Files/）"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 3600,
+      "default": 300,
+      "description": "任务超时秒数，超时后 runner 写 error.json"
+    },
+    "meta": {
+      "type": "object",
+      "description": "调用方自定义元数据，EA 不读取，原样透传到 result.json",
+      "additionalProperties": true
+    }
+  }
+}

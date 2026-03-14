@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "blockcell/mt4/error",
+  "title": "MT4 Worker Error",
+  "description": "EA 遇到无法恢复的错误时写入，blockcell 据此告警或重试。",
+  "type": "object",
+  "required": ["job_id", "error_code", "error_message", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "出错时正在执行的 job_id，若初始化前出错则为空字符串"
+    },
+    "error_code": {
+      "type": "string",
+      "description": "错误码，便于程序化处理",
+      "enum": [
+        "JOB_NOT_FOUND",
+        "JOB_PARSE_ERROR",
+        "EA_INIT_FAILED",
+        "SYMBOL_NOT_AVAILABLE",
+        "DATA_COPY_FAILED",
+        "TIMEOUT",
+        "OUTPUT_WRITE_FAILED",
+        "UNKNOWN"
+      ]
+    },
+    "error_message": {
+      "type": "string",
+      "description": "人类可读的错误描述"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "错误发生时间，ISO 8601 UTC"
+    },
+    "mt4_error_code": {
+      "type": "integer",
+      "description": "MT4 GetLastError() 返回的原始错误码，可选"
+    },
+    "context": {
+      "type": "object",
+      "description": "附加上下文信息（如当前 symbol、bar index 等），可选",
+      "additionalProperties": true
+    }
+  }
+}

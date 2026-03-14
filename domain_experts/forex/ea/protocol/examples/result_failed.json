@@ -1,0 +1,10 @@
+{
+  "job_id": "replay_20260314_153000_a1b2",
+  "job_type": "replay",
+  "status": "failed",
+  "finished_at": "2026-03-14T15:31:05Z",
+  "duration_seconds": 5.1,
+  "error_message": "Symbol EURUSD not available in history data",
+  "data": {},
+  "meta": {}
+}

@@ -14,6 +14,7 @@
 - `ea/docs/BACKTEST_REPORT.md`：Task 14 回测与一致性结果
 - `ea/docs/DataService_EA_status.md`：DataService_EA 旧版现状与字段差异记录
 - `ea/docs/MT4_BLOCKCELL_INNOVATION.md`：**MT4 + EA 作为 blockcell 工具/技能的创新用法（非交易）— V2**
+- `ea/protocol/PROTOCOL.md`：**MT4 Worker 文件协议规范（job/result/heartbeat/error schema）**
 
 ### Blockcell Skill 侧
 

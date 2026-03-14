@@ -1,0 +1,20 @@
+{
+  "job_id": "feature_20260314_060000_c3d4",
+  "job_type": "feature",
+  "created_at": "2026-03-14T06:00:00Z",
+  "symbol": "EURUSD",
+  "timeframe": 240,
+  "date_from": "2026-03-07",
+  "date_to": "2026-03-14",
+  "ea_name": "FeatureWorker",
+  "ea_params": {
+    "Features": "RSI,ATR,BB,MA50,MA200,MarketState",
+    "OutputFile": "features_daily.json"
+  },
+  "output_path": "results/feature_20260314_060000_c3d4/",
+  "timeout_seconds": 120,
+  "meta": {
+    "triggered_by": "cron_daily_0600",
+    "symbols": ["EURUSD", "USDJPY", "GBPUSD"]
+  }
+}

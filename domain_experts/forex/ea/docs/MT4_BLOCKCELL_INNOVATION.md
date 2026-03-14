@@ -122,9 +122,9 @@ blockcell 写 feature_job.json（品种列表 + 特征列表 + as_of_date）
 ## 优先级路线图
 
 ```
-P0（地基）
+P0（地基）✅ 已完成
   └── 统一文件协议：job.json / result.json / heartbeat.json / error.json schema
-      状态：待实现
+      产物：`ea/protocol/` — 4 个 schema + 6 个示例 + validate.py + PROTOCOL.md
 
 P1（实时数据 RPC）✅ 已完成
   ├── DataService_EA.mq4（新版，100ms timer，含 GET_SYMBOL_INFO/EMA）

@@ -1,0 +1,19 @@
+{
+  "job_id": "replay_20260314_153000_a1b2",
+  "job_type": "replay",
+  "status": "success",
+  "finished_at": "2026-03-14T15:38:42Z",
+  "duration_seconds": 522.3,
+  "data": {
+    "total_bars": 1320,
+    "signals_generated": 47,
+    "signals_hit": 31,
+    "hit_rate": 0.659,
+    "avg_profit_pips": 18.4,
+    "max_drawdown_pct": 3.2
+  },
+  "meta": {
+    "triggered_by": "blockcell_agent",
+    "note": "验证 signal_pack v20260314-1500 在 Q1 历史数据上的命中率"
+  }
+}
