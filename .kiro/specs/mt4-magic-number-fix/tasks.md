@@ -9,11 +9,11 @@
   - 在 `OrderExecutor.mqh` 顶部添加 `#ifdef UNIT_TEST` 宏重定向：`#define ORDER_SEND MockOrderSend`（生产代码中展开为内建 `OrderSend`）
   - 在 `PositionManager.mqh` 顶部添加宏重定向：`ORDERS_TOTAL`/`ORDER_SELECT`/`ORDER_TYPE`/`ORDER_SYMBOL`/`ORDER_MAGIC`
   - 创建测试文件 `domain_experts/forex/ea/tests/TestMagicNumberBug.mq4`，定义 `MockOrderSend`（捕获 `g_LastOrderSendMagic`）和 `MockOrder` 结构体
-  - 测试用例 1：调用旧签名 `OpenPosition(0.1, 1.1000, 1.0950, 1.1100, 3)`，断言 `g_LastOrderSendMagic == 12345`（未修复时实际为 0，测试 FAIL）
-  - 测试用例 2：调用旧签名 `OpenMultiplePositions(splits, 2, 1.1000, 1.0950, 3, tickets)`，断言每笔 `g_LastOrderSendMagic == 12345`（未修复时实际为 0，测试 FAIL）
-  - 测试用例 3：注入两笔订单（magic=12345 和 magic=99999，symbol 均为当前品种），调用旧签名 `GetOpenPositions(positions)`，断言返回数量 == 1（未修复时返回 2，测试 FAIL）
-  - 在未修复代码上运行测试，**预期结果：FAIL**（这是正确的，证明 bug 存在）
-  - 记录反例：`g_LastOrderSendMagic == 0`（而非 12345），`GetOpenPositions` 返回 2（而非 1）
+  - 测试用例 1：调用 `OpenPosition(0.1, 1.1000, 1.0950, 1.1100, 3, 12345)`，断言 `g_LastOrderSendMagic == 12345`（在未修复版本中应 FAIL，修复后 PASS）
+  - 测试用例 2：调用 `OpenMultiplePositions(splits, 2, 1.1000, 1.0950, 3, tickets, 12345)`，断言每笔 `g_LastOrderSendMagic == 12345`（在未修复版本中应 FAIL，修复后 PASS）
+  - 测试用例 3：注入两笔订单（magic=12345 和 magic=99999，symbol 均为当前品种），调用 `GetOpenPositions(positions, 12345)`，断言返回数量 == 1（在未修复版本中应 FAIL，修复后 PASS）
+  - 未修复代码上的预期：**FAIL**（这是正确的，证明 bug 存在）
+  - 修复后回归的实际：探索性测试 `通过 3 / 失败 0`
   - 任务完成条件：测试已编写、已运行、失败已记录
   - _Requirements: 1.1, 1.2, 1.3_
 
@@ -85,3 +85,11 @@
   - 检查 UNIT_TEST 宏严格隔离，不污染生产构建（生产代码中 `#ifdef UNIT_TEST` 块不被编译）
   - 集成验证：确认双 EA 不同 MagicNumber 并行场景下各自只管理自己的订单
   - 如有疑问，询问用户后再继续
+
+- [x] 5. 无头自动化验收（新增）
+  - 新增测试 EA：`domain_experts/forex/ea/tests/TestMagicNumberBugEA.mq4`
+  - 新增一键脚本：`domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1`
+  - 自动化流程：同步测试 EA 与 include -> 编译 -> 回测执行 -> 解析 tester logs 中 `AUTO_TEST_SUMMARY` / `AUTO_TEST_RESULT`
+  - 冲突保护：启动前检查 runner `terminal.exe` 是否已占用同配置/同实例，冲突则阻断，避免产物污染
+  - 通过标准：`explore_pass=3, explore_fail=0, preserve_pass=5, preserve_fail=0, total_fail=0`
+  - 当前实测结果：`AUTO_TEST_RESULT: PASS`
