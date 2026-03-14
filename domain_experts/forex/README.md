@@ -12,6 +12,8 @@
 - `ea/docs/PARAMETER_PROTOCOL.md`：参数协议（JSON 契约）
 - `ea/docs/OPERATION_MANUAL.md`：部署与运行手册
 - `ea/docs/BACKTEST_REPORT.md`：Task 14 回测与一致性结果
+- `ea/docs/DataService_EA_status.md`：DataService_EA 旧版现状与字段差异记录
+- `ea/docs/MT4_BLOCKCELL_INNOVATION.md`：**MT4 + EA 作为 blockcell 工具/技能的创新用法（非交易）— V2**
 
 ### Blockcell Skill 侧
 
@@ -19,6 +21,8 @@
 - `skills/forex_strategy_generator/SKILL.md`：Skill 细节与接口
 - `skills/forex_strategy_generator/CRON_SETUP.md`：Cron 配置
 - `skills/forex_strategy_generator/ONLINE_STRICT_ACCEPTANCE_2026-03-10.md`：在线严格验收记录
+- `skills/mt4_query/README.md`：mt4_query skill（ZMQ 实时查询）
+- `skills/mt4_query/SKILL.md`：mt4_query 命令参考文档
 
 ## 历史/证据文档（按需查看）
 
