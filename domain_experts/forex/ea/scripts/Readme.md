@@ -86,6 +86,38 @@ Skip compile and reuse existing `ForexStrategyExecutor.ex4` in runner:
 pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_task14_backtest.ps1" -SkipCompile
 ```
 
+## 3.5) Run Magic Number Auto Tests (Headless)
+
+Script: `run_mt4_magic_number_tests.ps1`
+
+What it does:
+
+- syncs `tests/TestMagicNumberBugEA.mq4` + `include/*.mqh` into runner
+- compiles `TestMagicNumberBugEA.mq4` via `metaeditor.exe`
+- runs Strategy Tester once in portable runner
+- before launching, checks whether runner `terminal.exe` is already running with the same config (or same runner instance) and aborts to avoid artifact/log conflicts
+- parses tester logs for:
+  - `AUTO_TEST_SUMMARY: explore_pass=... explore_fail=... preserve_pass=... preserve_fail=... total_fail=...`
+  - `AUTO_TEST_RESULT: PASS|FAIL`
+- exits non-zero on test failure / timeout / missing summary
+
+Run:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1"
+```
+
+Skip compile and reuse existing `TestMagicNumberBugEA.ex4`:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -SkipCompile
+```
+
+Artifacts:
+
+- `domain_experts/forex/ea/backtest_artifacts/magic_number_tests_YYYYMMDD_HHMMSS/`
+- contains `summary.json`, compile log, copied tester logs, and report file
+
 ## 4) Run Task 14.5 Live-vs-Backtest Consistency Check
 
 Script: `run_mt4_task14_live_consistency.ps1`
@@ -406,4 +438,37 @@ Manual dry run (no file deletion):
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/cleanup_runner_logs.ps1" -RetentionDays 7 -MaxTotalSizeMB 512 -DryRun
+```
+
+## 10) Run Magic Number Auto Tests (Headless)
+
+Script: `run_mt4_magic_number_tests.ps1`
+
+What it does:
+
+- syncs `tests/TestMagicNumberBugEA.mq4` + `include/*.mqh` into runner
+- compiles `TestMagicNumberBugEA.mq4` via `metaeditor.exe`
+- runs the EA in Strategy Tester (headless); tests execute in `OnInit`
+- parses `AUTO_TEST_SUMMARY` / `AUTO_TEST_RESULT` from tester log
+- exits with error (throw) if any test fails or log is missing
+- writes artifacts under `backtest_artifacts/magic_number_tests_YYYYMMDD_HHMMSS/`
+
+Expected result: `explore: 3 pass / 0 fail`, `preserve: 5 pass / 0 fail`, `auto_result: PASS`
+
+Run:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1"
+```
+
+Skip recompile (reuse existing `.ex4`):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -SkipCompile
+```
+
+Custom runner path:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "domain_experts/forex/ea/scripts/run_mt4_magic_number_tests.ps1" -RunnerDir "C:\path\to\runner"
 ```
