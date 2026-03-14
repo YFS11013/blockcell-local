@@ -355,11 +355,18 @@ Get-ChildItem -Path $testerLogsDir -File -ErrorAction SilentlyContinue | Sort-Ob
     }
 }
 
-# ── 检查 EA 写出的 result / error ─────────────────────────────────────────────
+# ── Bug5 修复：启动前清理同 job_id 的旧产物，防止重跑读到旧结果 ──────────────
 
-# EA 写到 tester/files/result_{job_id}.json
 $runnerResultFile = Join-Path $runnerTesterFilesDir "result_${jobId}.json"
 $runnerErrorFile  = Join-Path $runnerTesterFilesDir "error_${jobId}.json"
+foreach ($stale in @($runnerResultFile, $runnerErrorFile)) {
+    if (Test-Path -LiteralPath $stale -PathType Leaf) {
+        Remove-Item -LiteralPath $stale -Force
+        Write-Host "[INFO] 清理旧产物: $stale"
+    }
+}
+
+# ── 检查 EA 写出的 result / error ─────────────────────────────────────────────
 
 $eaResultData = $null
 $eaErrorData  = $null
@@ -386,46 +393,54 @@ $finishedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 if ($timedOut) {
     $resultObj = [ordered]@{
-        job_id          = $jobId
-        job_type        = "replay"
-        status          = "timeout"
-        finished_at     = $finishedAt
+        job_id           = $jobId
+        job_type         = "replay"
+        status           = "timeout"
+        finished_at      = $finishedAt
         duration_seconds = $durationSec
-        error_message   = "Strategy Tester 超时（timeout_seconds=$timeoutSec）"
-        meta            = $job.meta
+        error_message    = "Strategy Tester 超时（timeout_seconds=$timeoutSec）"
+        meta             = $job.meta
     }
     Write-ErrorJson -Path $errorPath -JobId $jobId -Code "TIMEOUT" -Message "Strategy Tester 超时（timeout_seconds=$timeoutSec）"
 } elseif ($null -ne $eaErrorData) {
-    $resultObj = [ordered]@{
-        job_id          = $jobId
-        job_type        = "replay"
-        status          = "failed"
-        finished_at     = $finishedAt
-        duration_seconds = $durationSec
-        error_message   = $eaErrorData.error_message
-        meta            = $job.meta
-    }
-} elseif ($null -ne $eaResultData) {
-    # EA 写出了完整 result，直接透传 data
+    # EA 写出了 error 文件
     $resultObj = [ordered]@{
         job_id           = $jobId
         job_type         = "replay"
-        status           = "success"
+        status           = "failed"
+        finished_at      = $finishedAt
+        duration_seconds = $durationSec
+        error_message    = [string]$eaErrorData.error_message
+        meta             = $job.meta
+    }
+} elseif ($null -ne $eaResultData) {
+    # Bug1 修复：透传 EA 自己写出的 status，不强制覆盖为 success
+    $eaStatus = [string]$eaResultData.status
+    if ($eaStatus -notin @("success", "failed", "timeout", "partial")) {
+        $eaStatus = "failed"  # 非法值降级为 failed
+    }
+    $resultObj = [ordered]@{
+        job_id           = $jobId
+        job_type         = "replay"
+        status           = $eaStatus
         finished_at      = $finishedAt
         duration_seconds = $durationSec
         data             = $eaResultData.data
         meta             = $job.meta
     }
+    # EA 报告失败时补充 error_message
+    if ($eaStatus -eq "failed") {
+        $resultObj["error_message"] = if ($eaResultData.error_message) { [string]$eaResultData.error_message } else { "EA 报告执行失败" }
+    }
 } elseif ($reportReady) {
-    # EA 未写 result.json，但报告已生成 — 部分成功
+    # Bug3 修复：partial 分支不写 note/report_file（schema additionalProperties:false）
+    # 报告路径记录在 artifact 目录的 summary.json，不写入 result.json
     $resultObj = [ordered]@{
         job_id           = $jobId
         job_type         = "replay"
         status           = "partial"
         finished_at      = $finishedAt
         duration_seconds = $durationSec
-        note             = "Strategy Tester 报告已生成，但 EA 未写出 result.json（EA 可能不支持 P0 协议）"
-        report_file      = $artifactReportFile
         meta             = $job.meta
     }
 } else {

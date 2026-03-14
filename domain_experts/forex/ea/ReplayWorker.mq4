@@ -108,13 +108,23 @@ string ReadFile(string path) {
 
 // 写 heartbeat.json
 void WriteHeartbeat(string status, int currentBar, int totalBars) {
-    double pct = (totalBars > 0) ? (100.0 * currentBar / totalBars) : 0;
+    // Bug4 修复：progress_pct clamp 到 [0,100]，避免超出 schema 限制
+    double pct = 0.0;
+    if (totalBars > 0) {
+        pct = 100.0 * currentBar / totalBars;
+        if (pct > 100.0) pct = 100.0;
+        if (pct < 0.0)   pct = 0.0;
+    }
+    // Bug4 修复：timestamp 使用 ISO 8601 格式（YYYY-MM-DDTHH:MM:SSZ）
+    datetime now = TimeGMT();
+    string ts = StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+        TimeYear(now), TimeMonth(now), TimeDay(now),
+        TimeHour(now), TimeMinute(now), TimeSeconds(now));
     string json = StringFormat(
         "{\"job_id\":\"%s\",\"status\":\"%s\",\"timestamp\":\"%s\","
         "\"progress_pct\":%.1f,\"current_bar\":%d,\"total_bars\":%d,"
         "\"ea_version\":\"1.0\"}",
-        g_jobId, status,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS),
+        g_jobId, status, ts,
         pct, currentBar, totalBars
     );
     WriteFile(g_heartbeatPath, json);
@@ -122,11 +132,15 @@ void WriteHeartbeat(string status, int currentBar, int totalBars) {
 
 // 写 error 文件
 void WriteError(string code, string message) {
+    // Bug4 修复：timestamp 使用 ISO 8601 格式
+    datetime now = TimeGMT();
+    string ts = StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+        TimeYear(now), TimeMonth(now), TimeDay(now),
+        TimeHour(now), TimeMinute(now), TimeSeconds(now));
     string json = StringFormat(
         "{\"job_id\":\"%s\",\"error_code\":\"%s\","
         "\"error_message\":\"%s\",\"timestamp\":\"%s\"}",
-        g_jobId, code, message,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS)
+        g_jobId, code, message, ts
     );
     WriteFile(g_errorFilePath, json);
 }
@@ -140,6 +154,12 @@ void WriteResultSuccess() {
         ? g_totalProfitPips / g_signalsHit
         : 0.0;
 
+    // Bug4 修复：finished_at 使用 ISO 8601 格式
+    datetime now = TimeGMT();
+    string ts = StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+        TimeYear(now), TimeMonth(now), TimeDay(now),
+        TimeHour(now), TimeMinute(now), TimeSeconds(now));
+
     string json = StringFormat(
         "{\"job_id\":\"%s\",\"job_type\":\"replay\",\"status\":\"success\","
         "\"finished_at\":\"%s\","
@@ -151,8 +171,7 @@ void WriteResultSuccess() {
         "\"avg_profit_pips\":%.2f,"
         "\"max_drawdown_pct\":%.4f"
         "}}",
-        g_jobId,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS),
+        g_jobId, ts,
         g_totalBars,
         g_signalsGenerated,
         g_signalsHit,
@@ -166,13 +185,16 @@ void WriteResultSuccess() {
 
 // 写 result.json（失败）
 void WriteResultFailed(string errorMessage) {
+    // Bug4 修复：finished_at 使用 ISO 8601 格式
+    datetime now = TimeGMT();
+    string ts = StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+        TimeYear(now), TimeMonth(now), TimeDay(now),
+        TimeHour(now), TimeMinute(now), TimeSeconds(now));
     string json = StringFormat(
         "{\"job_id\":\"%s\",\"job_type\":\"replay\",\"status\":\"failed\","
         "\"finished_at\":\"%s\","
         "\"error_message\":\"%s\"}",
-        g_jobId,
-        TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS),
-        errorMessage
+        g_jobId, ts, errorMessage
     );
     WriteFile(g_resultFilePath, json);
 }
@@ -284,11 +306,26 @@ void OnDeinit(const int reason) {
         return;
     }
 
-    WriteHeartbeat("idle", g_processedBars, g_totalBars);
-    WriteResultSuccess();
+    // Bug2 修复：根据退出原因区分正常完成 vs 中断/异常，避免假阳性
+    // Strategy Tester 正常完成时 reason = REASON_PROGRAM(0) 或 REASON_CHARTCLOSE(3)
+    // 被外部强制终止时 reason = REASON_REMOVE(1) 或其他非预期值
+    bool normalExit = (reason == REASON_PROGRAM || reason == REASON_CHARTCLOSE ||
+                       reason == REASON_RECOMPILE);
 
-    Print("[ReplayWorker] OnDeinit: processed=", g_processedBars,
-          " signals=", g_signalsGenerated,
-          " hits=", g_signalsHit,
-          " reason=", reason);
+    WriteHeartbeat("idle", g_processedBars, g_totalBars);
+
+    if (normalExit) {
+        WriteResultSuccess();
+        Print("[ReplayWorker] OnDeinit(正常): processed=", g_processedBars,
+              " signals=", g_signalsGenerated,
+              " hits=", g_signalsHit,
+              " reason=", reason);
+    } else {
+        // 非正常退出（被移除、强制关闭等）写 failed
+        string msg = StringFormat("EA 非正常退出（reason=%d，processed=%d/%d）",
+                                  reason, g_processedBars, g_totalBars);
+        WriteResultFailed(msg);
+        WriteError("UNKNOWN", msg);
+        Print("[ReplayWorker] OnDeinit(异常): ", msg);
+    }
 }
