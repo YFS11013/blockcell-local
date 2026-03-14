@@ -1,0 +1,61 @@
+name: mt4_query
+description: "MT4 实时数据查询 — 通过 ZMQ 连接 MT4 DataService EA，查询实时报价、技术指标、账户信息和持仓"
+requires:
+  bins:
+    - python
+  env: []
+permissions: []
+always: false
+triggers:
+  # 报价查询
+  - "当前价格"
+  - "当前价位"
+  - "实时价格"
+  - "实时报价"
+  - "现在多少"
+  - "价位"
+  - "报价"
+  - "EURUSD 价格"
+  - "GBPUSD 价格"
+  - "点差"
+  # 技术指标
+  - "RSI"
+  - "MACD"
+  - "EMA"
+  - "均线"
+  - "布林带"
+  - "ATR"
+  - "Stoch"
+  - "随机指标"
+  - "技术指标"
+  - "当前指标"
+  - "实时指标"
+  # 账户与持仓
+  - "当前持仓"
+  - "持仓"
+  - "账户余额"
+  - "账户净值"
+  - "账户信息"
+  - "有几个单"
+  - "有哪些单"
+  # 市场状态
+  - "市场开着吗"
+  - "能交易吗"
+  - "MT4 连接"
+  - "MT4 状态"
+  # K线数据
+  - "K线数据"
+  - "历史数据"
+  - "OHLCV"
+  # 直接命令
+  - "GET_SYMBOL_INFO"
+  - "GET_INDICATOR"
+  - "GET_ACCOUNT_INFO"
+  - "GET_POSITIONS"
+  - "GET_HISTORICAL_DATA"
+  - "IS_MARKET_OPEN"
+  - "PING"
+output_format: "json"
+fallback:
+  strategy: "error"
+  message: "MT4 查询失败。请确认 MT4 已运行并挂载了 DataService_EA.mq4，且自动交易已启用。"
