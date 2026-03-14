@@ -1,0 +1,44 @@
+name: mt4_features
+description: "MT4 多品种技术特征计算 — 通过文件协议驱动 FeatureWorker EA，离线批量计算 RSI/ATR/MA趋势/布林带/随机指标等特征包"
+requires:
+  bins:
+    - python
+    - powershell
+  env: []
+permissions:
+  - fs.read
+  - fs.write
+always: false
+triggers:
+  # 特征计算
+  - "计算特征"
+  - "特征包"
+  - "技术特征"
+  - "批量特征"
+  - "特征计算"
+  - "feature"
+  - "features"
+  # 具体特征名
+  - "RSI_H4"
+  - "ATR_H4"
+  - "MA_TREND"
+  - "BB_POS"
+  - "STOCH_H4"
+  - "MARKET_STATE"
+  # 市场扫描
+  - "市场扫描"
+  - "哪些品种趋势"
+  - "趋势品种"
+  - "波动率扫描"
+  - "多品种分析"
+  - "扫描市场"
+  # 离线计算
+  - "离线计算"
+  - "FeatureWorker"
+  - "特征工程"
+  - "每日特征"
+  - "日特征包"
+output_format: "json"
+fallback:
+  strategy: "error"
+  message: "MT4 特征计算失败。请确认 MT4 portable runner 已配置，且 FeatureWorker.mq4 已编译。"
