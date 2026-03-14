@@ -6,6 +6,59 @@
 - 不再依赖或读取 `AppData\Roaming\MetaQuotes\Terminal\...` 作为输入源。
 - `run_mt4_task14_backtest.ps1` 会先把仓库中的 EA 源码同步到 runner，再在 runner 内执行编译与回测。
 
+## 0) MT4 DataService EA — ZMQ 实时查询客户端
+
+Script: `zmq_client.py`
+
+前置条件：
+- MT4 已运行，`DataService_EA.mq4` 已挂载在图表上
+- `pip install pyzmq`
+
+```powershell
+# 连通性测试
+python domain_experts/forex/ea/scripts/zmq_client.py PING
+
+# 查询 RSI（EURUSD H4，周期14）
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_INDICATOR:RSI,EURUSD,240,14"
+
+# 查询 MACD
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_INDICATOR:MACD,EURUSD,240,12,26,9"
+
+# 查询 Bollinger Bands
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_INDICATOR:BB,EURUSD,240,20,2.0"
+
+# 查询 ATR
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_INDICATOR:ATR,EURUSD,240,14"
+
+# 查询 EMA200
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_INDICATOR:EMA,EURUSD,240,200"
+
+# 最近 100 根 H4 K线
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_HISTORICAL_DATA:EURUSD,240,100"
+
+# 品种报价（bid/ask/spread）
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_SYMBOL_INFO:EURUSD"
+
+# 账户信息
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_ACCOUNT_INFO"
+
+# 市场是否开放
+python domain_experts/forex/ea/scripts/zmq_client.py "IS_MARKET_OPEN"
+
+# 当前持仓
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_POSITIONS"
+
+# 格式化输出
+python domain_experts/forex/ea/scripts/zmq_client.py "GET_ACCOUNT_INFO" --pretty
+
+# 自定义端口 / 超时
+python domain_experts/forex/ea/scripts/zmq_client.py PING --endpoint tcp://localhost:5557 --timeout 5000
+```
+
+退出码：`0` 成功，`1` 超时或 EA 返回 error，`2` 参数错误
+
+---
+
 ## 1) Copy EA Files To MT4
 
 ```powershell
